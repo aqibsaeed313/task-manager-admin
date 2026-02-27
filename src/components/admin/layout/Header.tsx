@@ -18,6 +18,17 @@ import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/admin/apiClient";
 import { getAuthState } from "@/lib/auth";
 
+type MessageApi = {
+  id: string;
+  _id?: string;
+  title?: string;
+  content?: string;
+  timestamp?: string;
+  createdAt?: string;
+  type?: "direct" | "broadcast";
+  status?: "sent" | "delivered" | "read";
+};
+
 interface HeaderProps {
   onMenuClick?: () => void;
 }
@@ -56,6 +67,39 @@ export function Header({ onMenuClick }: HeaderProps) {
     .join("")
     .toUpperCase();
 
+  const notificationsQuery = useQuery({
+    queryKey: ["notifications"],
+    queryFn: async () => {
+      const res = await apiFetch<{ items?: MessageApi[] } | MessageApi[]>("/api/messages");
+      const items = Array.isArray(res) ? res : Array.isArray(res?.items) ? res.items : [];
+      return items
+        .map((m: any) => ({
+          ...m,
+          id: String(m.id || m._id || ""),
+        }))
+        .filter((m: any) => Boolean(m.id));
+    },
+  });
+
+  const notifications = (notificationsQuery.data || [])
+    .slice()
+    .sort((a, b) => String(b.timestamp || "").localeCompare(String(a.timestamp || "")))
+    .slice(0, 3);
+
+  const unreadCount = (notificationsQuery.data || []).filter((n) => n.status !== "read").length;
+
+  const markRead = async (id: string) => {
+    try {
+      await apiFetch(`/api/messages/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({ status: "read" }),
+      });
+      await notificationsQuery.refetch();
+    } catch {
+      // ignore
+    }
+  };
+
   return (
     <header className="h-14 sm:h-16 bg-card border-b border-border flex items-center justify-between px-3 sm:px-4 md:px-6">
       
@@ -73,31 +117,36 @@ export function Header({ onMenuClick }: HeaderProps) {
         </Button>
 
         {/* Search Bar - Responsive */}
-        <div className="relative flex-1 max-w-full sm:max-w-md md:max-w-lg lg:max-w-xl">
-          {/* Mobile Search Icon (Always visible) */}
-          <div className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground md:hidden">
-            <Search className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-          </div>
+        <div className="relative flex-1 min-w-0 max-w-[140px] sm:max-w-md md:max-w-lg lg:max-w-xl">
+          {/* Mobile Search Icon Button */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="md:hidden h-9 w-9 flex-shrink-0 absolute left-0 top-1/2 -translate-y-1/2"
+            aria-label="Search"
+          >
+            <Search className="h-4 w-4 text-muted-foreground" />
+          </Button>
           
           {/* Desktop Search Input */}
           <Input
             placeholder="Search tasks, employees, locations..."
             className={cn(
-              "pl-8 sm:pl-10 bg-muted/50 border-0 focus-visible:ring-1 focus-visible:ring-accent",
-              "hidden md:flex", // Hidden on mobile, visible on desktop
-              "h-9 sm:h-10 text-sm sm:text-base"
+              "pl-10 bg-muted/50 border-0 focus-visible:ring-1 focus-visible:ring-accent",
+              "hidden md:flex",
+              "h-9 sm:h-10 text-sm"
             )}
           />
           
-          {/* Mobile Search Hint - Only visible on mobile */}
-          <div className="flex md:hidden items-center text-xs sm:text-sm text-muted-foreground truncate">
-            <span className="truncate">Search tasks, employees...</span>
+          {/* Mobile Search Hint - Compact */}
+          <div className="flex md:hidden items-center justify-end pr-2">
+            <span className="text-xs text-muted-foreground truncate max-w-[80px] sm:max-w-none">Search...</span>
           </div>
         </div>
       </div>
 
       {/* Right Section - Notifications & User Menu */}
-      <div className="flex items-center gap-2 sm:gap-3 md:gap-4 flex-shrink-0">
+      <div className="flex items-center gap-1 sm:gap-3 md:gap-4 flex-shrink-0 ml-2">
         
         {/* Notifications */}
         <DropdownMenu>
@@ -108,9 +157,11 @@ export function Header({ onMenuClick }: HeaderProps) {
               className="relative h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0"
             >
               <Bell className="h-4 w-4 sm:h-5 sm:w-5" />
-              <Badge className="absolute -top-1 -right-1 h-4 w-4 sm:h-5 sm:w-5 flex items-center justify-center p-0 bg-destructive text-destructive-foreground text-[10px] sm:text-xs">
-                3
-              </Badge>
+              {unreadCount > 0 && (
+                <Badge className="absolute -top-1 -right-1 h-4 w-4 sm:h-5 sm:w-5 flex items-center justify-center p-0 bg-destructive text-destructive-foreground text-[10px] sm:text-xs">
+                  {Math.min(unreadCount, 9)}
+                </Badge>
+              )}
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent 
@@ -121,37 +172,33 @@ export function Header({ onMenuClick }: HeaderProps) {
               Notifications
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-            
-            {/* Notification Items - Responsive */}
-            <DropdownMenuItem className="flex flex-col items-start gap-1 py-2 sm:py-3 px-3 sm:px-4">
-              <span className="font-medium text-xs sm:text-sm">New task assigned</span>
-              <span className="text-xs sm:text-sm text-muted-foreground line-clamp-2">
-                Clean HVAC filters at Location A
-              </span>
-              <span className="text-[10px] sm:text-xs text-muted-foreground">
-                2 mins ago
-              </span>
-            </DropdownMenuItem>
-            
-            <DropdownMenuItem className="flex flex-col items-start gap-1 py-2 sm:py-3 px-3 sm:px-4">
-              <span className="font-medium text-xs sm:text-sm">Employee clocked in</span>
-              <span className="text-xs sm:text-sm text-muted-foreground line-clamp-2">
-                John Doe started shift at 9:00 AM
-              </span>
-              <span className="text-[10px] sm:text-xs text-muted-foreground">
-                15 mins ago
-              </span>
-            </DropdownMenuItem>
-            
-            <DropdownMenuItem className="flex flex-col items-start gap-1 py-2 sm:py-3 px-3 sm:px-4">
-              <span className="font-medium text-xs sm:text-sm">Overdue task alert</span>
-              <span className="text-xs sm:text-sm text-muted-foreground line-clamp-2">
-                Vehicle inspection pending for 2 days
-              </span>
-              <span className="text-[10px] sm:text-xs text-muted-foreground">
-                1 hour ago
-              </span>
-            </DropdownMenuItem>
+
+            {notifications.length === 0 ? (
+              <DropdownMenuItem className="flex flex-col items-start gap-1 py-2 sm:py-3 px-3 sm:px-4">
+                <span className="text-xs sm:text-sm text-muted-foreground">No notifications</span>
+              </DropdownMenuItem>
+            ) : (
+              notifications.map((n) => (
+                <DropdownMenuItem
+                  key={n.id}
+                  className="flex flex-col items-start gap-1 py-2 sm:py-3 px-3 sm:px-4"
+                  onClick={() => {
+                    void markRead(n.id);
+                    navigate("/admin/messaging");
+                  }}
+                >
+                  <span className="font-medium text-xs sm:text-sm">
+                    {String(n.title || "Notification")}
+                  </span>
+                  <span className="text-xs sm:text-sm text-muted-foreground line-clamp-2">
+                    {String(n.content || "")}
+                  </span>
+                  <span className="text-[10px] sm:text-xs text-muted-foreground">
+                    {String(n.timestamp || n.createdAt || "")}
+                  </span>
+                </DropdownMenuItem>
+              ))
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
 
@@ -185,12 +232,18 @@ export function Header({ onMenuClick }: HeaderProps) {
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
             
-            <DropdownMenuItem className="text-xs sm:text-sm py-2 sm:py-1.5">
+            <DropdownMenuItem
+              className="text-xs sm:text-sm py-2 sm:py-1.5"
+              onClick={() => navigate("/admin/profile")}
+            >
               <User className="mr-2 h-3.5 w-3.5 sm:h-4 sm:w-4" />
               Profile
             </DropdownMenuItem>
             
-            <DropdownMenuItem className="text-xs sm:text-sm py-2 sm:py-1.5">
+            <DropdownMenuItem
+              className="text-xs sm:text-sm py-2 sm:py-1.5"
+              onClick={() => navigate("/admin/settings")}
+            >
               Settings
             </DropdownMenuItem>
             

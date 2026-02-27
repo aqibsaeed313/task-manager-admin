@@ -7,6 +7,7 @@ type ApiErrorBody = {
 };
 
 export function getApiBaseUrl() {
+  // Always use Vercel backend URL
   return "https://task-manager-backend-theta-ten.vercel.app";
 }
 
@@ -21,13 +22,18 @@ async function parseJsonSafe(res: Response) {
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const base = getApiBaseUrl();
-  const url = path.startsWith("http") ? path : `${base}${path.startsWith("/") ? "" : "/"}${path}`;
+  const baseUrl = "https://task-manager-backend-theta-ten.vercel.app";
+  const url = `${String(baseUrl).replace(/\/$/, "")}${path}`;
 
   const auth = getAuthState();
   const headers = new Headers(init?.headers);
 
-  if (!headers.has("Content-Type") && init?.body) {
+  const isFormData =
+    typeof FormData !== "undefined" &&
+    !!init?.body &&
+    init.body instanceof FormData;
+
+  if (!headers.has("Content-Type") && init?.body && !isFormData) {
     headers.set("Content-Type", "application/json");
   }
 

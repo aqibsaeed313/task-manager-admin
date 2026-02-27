@@ -50,8 +50,9 @@ import {
   Calendar,
   DollarSign,
   Users,
+  Power,
 } from "lucide-react";
-import { createResource, listResource, updateResource } from "@/lib/admin/apiClient";
+import { createResource, deleteResource, listResource, updateResource } from "@/lib/admin/apiClient";
 
 interface Employee {
   id: string;
@@ -67,105 +68,6 @@ interface Employee {
   hireDate: string;
   shift?: string;
 }
-
-const employees: Employee[] = [
-  {
-    id: "EMP-001",
-    name: "John Doe",
-    initials: "JD",
-    email: "john.doe@company.com",
-    phone: "+1 (555) 123-4567",
-    role: "Maintenance Technician",
-    department: "Maintenance",
-    status: "active",
-    payRate: "$25/hr",
-    hireDate: "2022-03-15",
-  },
-  {
-    id: "EMP-002",
-    name: "Sarah Miller",
-    initials: "SM",
-    email: "sarah.miller@company.com",
-    phone: "+1 (555) 234-5678",
-    role: "Cleaning Supervisor",
-    department: "Cleaning",
-    status: "active",
-    payRate: "$28/hr",
-    hireDate: "2021-08-20",
-  },
-  {
-    id: "EMP-003",
-    name: "Mike Johnson",
-    initials: "MJ",
-    email: "mike.johnson@company.com",
-    phone: "+1 (555) 345-6789",
-    role: "Field Technician",
-    department: "Field Operations",
-    status: "on-leave",
-    payRate: "$26/hr",
-    hireDate: "2023-01-10",
-  },
-  {
-    id: "EMP-004",
-    name: "Emily Brown",
-    initials: "EB",
-    email: "emily.brown@company.com",
-    phone: "+1 (555) 456-7890",
-    role: "Grounds Keeper",
-    department: "Landscaping",
-    status: "active",
-    payRate: "$22/hr",
-    hireDate: "2022-06-01",
-  },
-  {
-    id: "EMP-005",
-    name: "Alex Wilson",
-    initials: "AW",
-    email: "alex.wilson@company.com",
-    phone: "+1 (555) 567-8901",
-    role: "Security Guard",
-    department: "Security",
-    status: "active",
-    payRate: "$24/hr",
-    hireDate: "2022-11-15",
-  },
-  {
-    id: "EMP-006",
-    name: "Tom Garcia",
-    initials: "TG",
-    email: "tom.garcia@company.com",
-    phone: "+1 (555) 678-9012",
-    role: "HVAC Specialist",
-    department: "Maintenance",
-    status: "inactive",
-    payRate: "$30/hr",
-    hireDate: "2020-05-20",
-  },
-  {
-    id: "EMP-007",
-    name: "Lisa Chen",
-    initials: "LC",
-    email: "lisa.chen@company.com",
-    phone: "+1 (555) 789-0123",
-    role: "Office Cleaner",
-    department: "Cleaning",
-    status: "active",
-    payRate: "$20/hr",
-    hireDate: "2023-04-12",
-  },
-  {
-    id: "EMP-008",
-    name: "David Park",
-    initials: "DP",
-    email: "david.park@company.com",
-    phone: "+1 (555) 890-1234",
-    role: "Electrician",
-    department: "Maintenance",
-    status: "active",
-    payRate: "$32/hr",
-    hireDate: "2021-02-28",
-  },
-];
 
 const statusClasses = {
   active: "bg-success/10 text-success",
@@ -199,6 +101,7 @@ const Employees = () => {
   const [viewProfileOpen, setViewProfileOpen] = useState(false);
   const [editEmployeeOpen, setEditEmployeeOpen] = useState(false);
   const [deactivateConfirmOpen, setDeactivateConfirmOpen] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [shiftOpen, setShiftOpen] = useState(false);
 
   const [editFormData, setEditFormData] = useState({
@@ -365,6 +268,24 @@ const Employees = () => {
       setSelectedEmployee(null);
     } catch (e) {
       setApiError(e instanceof Error ? e.message : "Failed to update employee");
+    }
+  };
+
+  const handleDeleteConfirm = (employee: Employee) => {
+    setSelectedEmployee(employee);
+    setDeleteConfirmOpen(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!selectedEmployee) return;
+    try {
+      setApiError(null);
+      await deleteResource("employees", selectedEmployee.id);
+      await refreshEmployees();
+      setDeleteConfirmOpen(false);
+      setSelectedEmployee(null);
+    } catch (e) {
+      setApiError(e instanceof Error ? e.message : "Failed to delete employee");
     }
   };
 
@@ -742,8 +663,15 @@ const Employees = () => {
                               onClick={() => handleDeactivateConfirm(employee)}
                               className="text-destructive"
                             >
-                              <Trash2 className="mr-2 h-4 w-4" />
+                              <Power className="mr-2 h-4 w-4" />
                               {employee.status === "inactive" ? "Activate" : "Deactivate"}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => handleDeleteConfirm(employee)}
+                              className="text-destructive"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -915,8 +843,15 @@ const Employees = () => {
                                   onClick={() => handleDeactivateConfirm(employee)}
                                   className="text-destructive"
                                 >
-                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  <Power className="mr-2 h-4 w-4" />
                                   {employee.status === "inactive" ? "Activate" : "Deactivate"}
+                                </DropdownMenuItem>
+                                <DropdownMenuItem
+                                  onClick={() => handleDeleteConfirm(employee)}
+                                  className="text-destructive"
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" />
+                                  Delete
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
@@ -1242,6 +1177,45 @@ const Employees = () => {
               className="w-full sm:w-auto order-1 sm:order-2"
             >
               {selectedEmployee?.status === "inactive" ? "Activate" : "Deactivate"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* Delete Confirm Dialog - Responsive */}
+      <Dialog open={deleteConfirmOpen} onOpenChange={setDeleteConfirmOpen}>
+        <DialogContent className="w-[95vw] max-w-md mx-auto p-4 sm:p-6">
+          <DialogHeader className="space-y-1.5 sm:space-y-2">
+            <DialogTitle className="text-base sm:text-lg text-destructive">
+              Delete Employee
+            </DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm">
+              This action cannot be undone. The employee will be permanently removed from the system.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedEmployee && (
+            <div className="rounded-md bg-muted p-3 sm:p-4 text-xs sm:text-sm mt-2">
+              <p className="font-medium break-words">{selectedEmployee.name}</p>
+              <p className="text-muted-foreground text-xs sm:text-sm break-words mt-1">
+                {selectedEmployee.id}
+              </p>
+            </div>
+          )}
+          
+          <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-3 mt-4 sm:mt-6">
+            <Button 
+              variant="outline" 
+              onClick={() => setDeleteConfirmOpen(false)}
+              className="w-full sm:w-auto order-2 sm:order-1"
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={confirmDelete}
+              className="w-full sm:w-auto order-1 sm:order-2"
+            >
+              Delete
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -49,7 +49,7 @@ import {
   Calendar,
   FileText,
 } from "lucide-react";
-import { createResource, deleteResource, listResource, updateResource } from "@/lib/admin/apiClient";
+import { apiFetch, createResource, deleteResource, listResource, updateResource } from "@/lib/admin/apiClient";
 
 interface Task {
   id: string;
@@ -58,13 +58,29 @@ interface Task {
   location: string;
   assignee: string;
   assigneeInitials: string;
-  priority: "high" | "medium" | "low";
+  priority: "low" | "medium" | "high";
   status: "pending" | "in-progress" | "completed" | "overdue";
   dueDate: string;
   dueTime: string;
   createdAt: string;
   attachmentFileName?: string;
   attachmentNote?: string;
+}
+
+interface Employee {
+  id: string;
+  name: string;
+  initials: string;
+  email: string;
+  status: "active" | "inactive" | "on-leave";
+}
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: "admin" | "manager" | "employee";
+  status: "active" | "inactive" | "pending";
 }
 
 const tasks: Task[] = [
@@ -166,6 +182,7 @@ const Tasks = () => {
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
   const [tasksList, setTasksList] = useState<Task[]>(() => []);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
@@ -186,6 +203,8 @@ const Tasks = () => {
     attachmentFileName: "",
     attachmentNote: "",
   });
+
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -205,12 +224,59 @@ const Tasks = () => {
       try {
         setLoading(true);
         setApiError(null);
-        const list = await listResource<Task>("tasks");
+        
+        // Fetch tasks
+        const taskList = await listResource<Task>("tasks");
         if (!mounted) return;
-        setTasksList(list);
+        setTasksList(taskList);
+        
+        // Fetch employees from employees API
+        let allEmployees: Employee[] = [];
+        try {
+          const employeeList = await listResource<Employee>("employees");
+          if (mounted) {
+            allEmployees = employeeList.filter((e) => e.status === "active");
+          }
+        } catch (empErr) {
+          console.error("Failed to load employees:", empErr);
+        }
+        
+        // Fetch users with employee role from users API
+        try {
+          const userList = await listResource<User>("users");
+          if (mounted) {
+            const employeeUsers = userList
+              .filter((u) => u.role === "employee" && (u.status === "active" || u.status === "pending"))
+              .map((u) => ({
+                id: u.id,
+                name: u.name,
+                initials: u.name
+                  .split(" ")
+                  .map((n) => n[0])
+                  .slice(0, 2)
+                  .join("")
+                  .toUpperCase(),
+                email: u.email,
+                status: "active" as const,
+              }));
+            
+            // Merge both lists (remove duplicates by email)
+            employeeUsers.forEach((eu) => {
+              if (!allEmployees.some((e) => e.email === eu.email)) {
+                allEmployees.push(eu);
+              }
+            });
+          }
+        } catch (userErr) {
+          console.error("Failed to load users:", userErr);
+        }
+        
+        if (mounted) {
+          setEmployees(allEmployees);
+        }
       } catch (e) {
         if (!mounted) return;
-        setApiError(e instanceof Error ? e.message : "Failed to load tasks");
+        setApiError(e instanceof Error ? e.message : "Failed to load data");
       } finally {
         if (!mounted) return;
         setLoading(false);
@@ -251,7 +317,28 @@ const Tasks = () => {
         attachmentFileName: formData.attachmentFileName || "",
         attachmentNote: formData.attachmentNote || "",
       };
-      await createResource<Task>("tasks", newTask);
+      if (attachmentFile) {
+        const fd = new FormData();
+        fd.append("title", formData.title);
+        fd.append("description", formData.description);
+        fd.append("location", formData.location);
+        fd.append("assignee", formData.assignee);
+        fd.append("priority", formData.priority);
+        fd.append("status", formData.status);
+        fd.append("dueDate", formData.dueDate);
+        fd.append("dueTime", formData.dueTime);
+        fd.append("createdAt", newTask.createdAt);
+        fd.append("attachmentFileName", attachmentFile.name);
+        fd.append("attachmentNote", formData.attachmentNote);
+        fd.append("file", attachmentFile);
+
+        await apiFetch<{ item: Task }>("/api/tasks/upload", {
+          method: "POST",
+          body: fd,
+        });
+      } else {
+        await createResource<Task>("tasks", newTask);
+      }
       await refreshTasks();
       setCreateTaskOpen(false);
       setFormData({
@@ -266,6 +353,7 @@ const Tasks = () => {
         attachmentFileName: "",
         attachmentNote: "",
       });
+      setAttachmentFile(null);
     } catch (e) {
       setApiError(e instanceof Error ? e.message : "Failed to create task");
     }
@@ -464,13 +552,18 @@ const Tasks = () => {
                       required
                     >
                       <option value="">Select assignee</option>
-                      <option value="John Doe">John Doe</option>
-                      <option value="Sarah Miller">Sarah Miller</option>
-                      <option value="Mike Johnson">Mike Johnson</option>
-                      <option value="Emily Brown">Emily Brown</option>
-                      <option value="Alex Wilson">Alex Wilson</option>
-                      <option value="Tom Garcia">Tom Garcia</option>
+                      {employees.map((emp) => (
+                        <option key={emp.id} value={emp.name}>
+                          {emp.name}
+                        </option>
+                      ))}
                     </select>
+                    {employees.length === 0 && (
+                      <p className="text-xs text-warning mt-1">No employees found. Check console for errors.</p>
+                    )}
+                    {employees.length > 0 && (
+                      <p className="text-xs text-muted-foreground mt-1">{employees.length} employee(s) available</p>
+                    )}
                   </div>
                 </div>
 
@@ -527,14 +620,55 @@ const Tasks = () => {
                 {/* Attachment File Name & Note */}
                 <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
                   <div className="flex-1 min-w-0">
-                    <label className="block text-xs sm:text-sm font-medium mb-1.5">Attachment File Name</label>
-                    <input
-                      type="text"
-                      value={formData.attachmentFileName}
-                      onChange={(e) => setFormData({ ...formData, attachmentFileName: e.target.value })}
-                      placeholder="e.g., photo.jpg"
-                      className="w-full rounded-md border px-3 py-2 text-sm sm:text-base"
-                    />
+                    <label className="block text-xs sm:text-sm font-medium mb-1.5">Attachment</label>
+                    <div
+                      className="w-full rounded-md border px-3 py-3 text-sm sm:text-base bg-muted/20 hover:bg-muted/30 transition-colors cursor-pointer"
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const f = e.dataTransfer.files?.[0];
+                        if (f) {
+                          setAttachmentFile(f);
+                          setFormData({ ...formData, attachmentFileName: f.name });
+                        }
+                      }}
+                      onClick={() => {
+                        const el = document.getElementById("task-attachment-input") as HTMLInputElement | null;
+                        el?.click();
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          const el = document.getElementById("task-attachment-input") as HTMLInputElement | null;
+                          el?.click();
+                        }
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-xs sm:text-sm font-medium truncate">
+                            {attachmentFile ? attachmentFile.name : "Click to choose or drag & drop a file"}
+                          </p>
+                          <p className="text-[10px] sm:text-xs text-muted-foreground">
+                            Max 10MB
+                          </p>
+                        </div>
+                        <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      </div>
+                      <input
+                        id="task-attachment-input"
+                        type="file"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0] || null;
+                          setAttachmentFile(f);
+                          setFormData({ ...formData, attachmentFileName: f?.name || "" });
+                        }}
+                      />
+                    </div>
                   </div>
                   <div className="flex-1 min-w-0">
                     <label className="block text-xs sm:text-sm font-medium mb-1.5">Attachment Note</label>
@@ -1031,12 +1165,12 @@ const Tasks = () => {
                     onChange={(e) => setEditFormData({ ...editFormData, assignee: e.target.value })}
                     className="w-full rounded-md border px-3 py-2 text-sm sm:text-base bg-white"
                   >
-                    <option value="John Doe">John Doe</option>
-                    <option value="Sarah Miller">Sarah Miller</option>
-                    <option value="Mike Johnson">Mike Johnson</option>
-                    <option value="Emily Brown">Emily Brown</option>
-                    <option value="Alex Wilson">Alex Wilson</option>
-                    <option value="Tom Garcia">Tom Garcia</option>
+                    <option value="">Select assignee</option>
+                    {employees.map((emp) => (
+                      <option key={emp.id} value={emp.name}>
+                        {emp.name}
+                      </option>
+                    ))}
                   </select>
                 </div>
               </div>

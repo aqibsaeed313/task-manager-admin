@@ -23,7 +23,7 @@ import {
   AlertCircle,
   UserPlus,
 } from "lucide-react";
-import { createResource, listResource, updateResource } from "@/lib/admin/apiClient";
+import { createResource, listResource, updateResource, apiFetch } from "@/lib/admin/apiClient";
 
 interface OnboardingEmployee {
   id: string;
@@ -34,12 +34,29 @@ interface OnboardingEmployee {
   progress: number;
   status: "pending" | "in-progress" | "completed" | "needs-review";
   approvalStatus: "pending" | "approved" | "rejected";
+  employeeId?: string;
   w4FileName?: string;
   i9FileName?: string;
   signatureFileName?: string;
   generatedPdfFileName?: string;
   completedSteps: string[];
   pendingSteps: string[];
+}
+
+interface Employee {
+  id: string;
+  name: string;
+  initials: string;
+  email: string;
+  status: "active" | "inactive" | "on-leave";
+}
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: "admin" | "manager" | "employee";
+  status: "active" | "inactive" | "pending";
 }
 
 type BackendOnboarding = {
@@ -53,73 +70,6 @@ type BackendOnboarding = {
   documentsRequired?: number;
   approvalStatus?: "pending" | "approved" | "rejected" | string;
 };
-
-const onboardingEmployees: OnboardingEmployee[] = [
-  {
-    id: "ONB-001",
-    name: "New Employee A",
-    initials: "NA",
-    email: "new.a@company.com",
-    startDate: "2024-01-20",
-    progress: 100,
-    status: "completed",
-    approvalStatus: "approved",
-    w4FileName: "w4_onb_001.pdf",
-    i9FileName: "i9_onb_001.pdf",
-    signatureFileName: "signature_onb_001.png",
-    generatedPdfFileName: "onboarding_packet_onb_001.pdf",
-    completedSteps: ["Personal Info", "W-4 Form", "I-9 Form", "Direct Deposit", "Handbook"],
-    pendingSteps: [],
-  },
-  {
-    id: "ONB-002",
-    name: "New Employee B",
-    initials: "NB",
-    email: "new.b@company.com",
-    startDate: "2024-01-22",
-    progress: 60,
-    status: "in-progress",
-    approvalStatus: "pending",
-    w4FileName: "w4_onb_002.pdf",
-    i9FileName: "i9_onb_002.pdf",
-    signatureFileName: "",
-    generatedPdfFileName: "",
-    completedSteps: ["Personal Info", "W-4 Form", "I-9 Form"],
-    pendingSteps: ["Direct Deposit", "Handbook"],
-  },
-  {
-    id: "ONB-003",
-    name: "New Employee C",
-    initials: "NC",
-    email: "new.c@company.com",
-    startDate: "2024-01-25",
-    progress: 40,
-    status: "needs-review",
-    approvalStatus: "pending",
-    w4FileName: "w4_onb_003.pdf",
-    i9FileName: "",
-    signatureFileName: "",
-    generatedPdfFileName: "",
-    completedSteps: ["Personal Info", "W-4 Form"],
-    pendingSteps: ["I-9 Form", "Direct Deposit", "Handbook"],
-  },
-  {
-    id: "ONB-004",
-    name: "New Employee D",
-    initials: "ND",
-    email: "new.d@company.com",
-    startDate: "2024-01-28",
-    progress: 0,
-    status: "pending",
-    approvalStatus: "pending",
-    w4FileName: "",
-    i9FileName: "",
-    signatureFileName: "",
-    generatedPdfFileName: "",
-    completedSteps: [],
-    pendingSteps: ["Personal Info", "W-4 Form", "I-9 Form", "Direct Deposit", "Handbook"],
-  },
-];
 
 const statusClasses = {
   pending: "bg-muted text-muted-foreground",
@@ -150,8 +100,10 @@ const Onboarding = () => {
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
   const [onboardingList, setOnboardingList] = useState<OnboardingEmployee[]>(() => []);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [formData, setFormData] = useState({
     name: "",
+    employeeId: "",
     email: "",
     startDate: "",
     status: "pending" as OnboardingEmployee["status"],
@@ -161,15 +113,67 @@ const Onboarding = () => {
     generatedPdfFileName: "",
   });
 
+  const [w4File, setW4File] = useState<File | null>(null);
+  const [i9File, setI9File] = useState<File | null>(null);
+  const [signatureFile, setSignatureFile] = useState<File | null>(null);
+  const [generatedPdfFile, setGeneratedPdfFile] = useState<File | null>(null);
+
   useEffect(() => {
     let mounted = true;
     const load = async () => {
       try {
         setLoading(true);
         setApiError(null);
+        
+        // Fetch onboarding list
         const list = await listResource<BackendOnboarding>("onboarding");
         if (!mounted) return;
         setOnboardingList(list.map(normalizeOnboardingItem));
+        
+        // Fetch employees from employees API
+        let allEmployees: Employee[] = [];
+        try {
+          const employeeList = await listResource<Employee>("employees");
+          if (mounted) {
+            allEmployees = employeeList.filter((e) => e.status === "active");
+          }
+        } catch (empErr) {
+          console.error("Failed to load employees:", empErr);
+        }
+        
+        // Fetch users with employee role from users API
+        try {
+          const userList = await listResource<User>("users");
+          if (mounted) {
+            const employeeUsers = userList
+              .filter((u) => u.role === "employee" && (u.status === "active" || u.status === "pending"))
+              .map((u) => ({
+                id: u.id,
+                name: u.name,
+                initials: u.name
+                  .split(" ")
+                  .map((n) => n[0])
+                  .slice(0, 2)
+                  .join("")
+                  .toUpperCase(),
+                email: u.email,
+                status: "active" as const,
+              }));
+            
+            // Merge both lists (remove duplicates by email)
+            employeeUsers.forEach((eu) => {
+              if (!allEmployees.some((e) => e.email === eu.email)) {
+                allEmployees.push(eu);
+              }
+            });
+          }
+        } catch (userErr) {
+          console.error("Failed to load users:", userErr);
+        }
+        
+        if (mounted) {
+          setEmployees(allEmployees);
+        }
       } catch (e) {
         if (!mounted) return;
         setApiError(e instanceof Error ? e.message : "Failed to load onboarding");
@@ -267,6 +271,7 @@ const Onboarding = () => {
       progress: isCompleted ? 100 : 0,
       status: formData.status,
       approvalStatus: "pending",
+      employeeId: formData.employeeId || undefined,
       w4FileName: formData.w4FileName || "",
       i9FileName: formData.i9FileName || "",
       signatureFileName: formData.signatureFileName || "",
@@ -275,13 +280,37 @@ const Onboarding = () => {
       pendingSteps: isCompleted ? [] : isPending ? [...allSteps] : [...allSteps],
     };
 
+    const hasFiles = w4File || i9File || signatureFile || generatedPdfFile;
+
     try {
       setApiError(null);
-      await createResource<OnboardingEmployee>("onboarding", next);
+
+      if (hasFiles) {
+        const fd = new FormData();
+        fd.append("name", formData.name);
+        fd.append("email", formData.email);
+        fd.append("startDate", formData.startDate);
+        fd.append("status", formData.status);
+        fd.append("progress", String(isCompleted ? 100 : 0));
+        fd.append("approvalStatus", "pending");
+        if (w4File) fd.append("w4File", w4File);
+        if (i9File) fd.append("i9File", i9File);
+        if (signatureFile) fd.append("signatureFile", signatureFile);
+        if (generatedPdfFile) fd.append("generatedPdfFile", generatedPdfFile);
+
+        await apiFetch<{ item: BackendOnboarding }>("/api/onboarding/upload", {
+          method: "POST",
+          body: fd,
+        });
+      } else {
+        await createResource<OnboardingEmployee>("onboarding", next);
+      }
+
       await refresh();
       setStartOnboardingOpen(false);
       setFormData({
         name: "",
+        employeeId: "",
         email: "",
         startDate: "",
         status: "pending",
@@ -290,6 +319,10 @@ const Onboarding = () => {
         signatureFileName: "",
         generatedPdfFileName: "",
       });
+      setW4File(null);
+      setI9File(null);
+      setSignatureFile(null);
+      setGeneratedPdfFile(null);
     } catch (e) {
       setApiError(e instanceof Error ? e.message : "Failed to start onboarding");
     }
@@ -351,14 +384,27 @@ const Onboarding = () => {
                 {/* Employee Name & Email */}
                 <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
                   <div className="flex-1 min-w-0">
-                    <label className="block text-xs sm:text-sm font-medium mb-1.5">Employee Name *</label>
-                    <Input
-                      value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      placeholder="John Doe"
+                    <label className="block text-xs sm:text-sm font-medium mb-1.5">Employee *</label>
+                    <select
+                      value={formData.employeeId}
+                      onChange={(e) => {
+                        const empId = e.target.value;
+                        const emp = employees.find((e) => e.id === empId);
+                        setFormData({ ...formData, employeeId: empId, name: emp?.name || "", email: emp?.email || "" });
+                      }}
+                      className="w-full rounded-md border px-3 py-2 text-sm sm:text-base bg-white h-9 sm:h-10"
                       required
-                      className="h-9 sm:h-10 text-sm sm:text-base"
-                    />
+                    >
+                      <option value="">Select employee</option>
+                      {employees.map((emp) => (
+                        <option key={emp.id} value={emp.id}>
+                          {emp.name}
+                        </option>
+                      ))}
+                    </select>
+                    {employees.length === 0 && (
+                      <p className="text-xs text-warning mt-1">No employees found.</p>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <label className="block text-xs sm:text-sm font-medium mb-1.5">Email *</label>
@@ -402,49 +448,215 @@ const Onboarding = () => {
                   </div>
                 </div>
 
-                {/* W-4 & I-9 */}
+                {/* W-4 & I-9 File Uploads */}
                 <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
                   <div className="flex-1 min-w-0">
-                    <label className="block text-xs sm:text-sm font-medium mb-1.5">W-4 (File Name)</label>
-                    <Input
-                      value={formData.w4FileName}
-                      onChange={(e) => setFormData({ ...formData, w4FileName: e.target.value })}
-                      placeholder="e.g., w4.pdf"
-                      className="h-9 sm:h-10 text-sm sm:text-base"
-                    />
+                    <label className="block text-xs sm:text-sm font-medium mb-1.5">W-4 Document</label>
+                    <div
+                      className="w-full rounded-md border px-3 py-3 text-sm sm:text-base bg-muted/20 hover:bg-muted/30 transition-colors cursor-pointer"
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const f = e.dataTransfer.files?.[0];
+                        if (f) {
+                          setW4File(f);
+                          setFormData({ ...formData, w4FileName: f.name });
+                        }
+                      }}
+                      onClick={() => {
+                        const el = document.getElementById("onboarding-w4-input") as HTMLInputElement | null;
+                        el?.click();
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          const el = document.getElementById("onboarding-w4-input") as HTMLInputElement | null;
+                          el?.click();
+                        }
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-xs sm:text-sm font-medium truncate">
+                            {w4File ? w4File.name : "Click to choose or drag & drop"}
+                          </p>
+                          <p className="text-[10px] sm:text-xs text-muted-foreground">
+                            Max 10MB
+                          </p>
+                        </div>
+                        <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      </div>
+                      <input
+                        id="onboarding-w4-input"
+                        type="file"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0] || null;
+                          setW4File(f);
+                          setFormData({ ...formData, w4FileName: f?.name || "" });
+                        }}
+                      />
+                    </div>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <label className="block text-xs sm:text-sm font-medium mb-1.5">I-9 (File Name)</label>
-                    <Input
-                      value={formData.i9FileName}
-                      onChange={(e) => setFormData({ ...formData, i9FileName: e.target.value })}
-                      placeholder="e.g., i9.pdf"
-                      className="h-9 sm:h-10 text-sm sm:text-base"
-                    />
+                    <label className="block text-xs sm:text-sm font-medium mb-1.5">I-9 Document</label>
+                    <div
+                      className="w-full rounded-md border px-3 py-3 text-sm sm:text-base bg-muted/20 hover:bg-muted/30 transition-colors cursor-pointer"
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const f = e.dataTransfer.files?.[0];
+                        if (f) {
+                          setI9File(f);
+                          setFormData({ ...formData, i9FileName: f.name });
+                        }
+                      }}
+                      onClick={() => {
+                        const el = document.getElementById("onboarding-i9-input") as HTMLInputElement | null;
+                        el?.click();
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          const el = document.getElementById("onboarding-i9-input") as HTMLInputElement | null;
+                          el?.click();
+                        }
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-xs sm:text-sm font-medium truncate">
+                            {i9File ? i9File.name : "Click to choose or drag & drop"}
+                          </p>
+                          <p className="text-[10px] sm:text-xs text-muted-foreground">
+                            Max 10MB
+                          </p>
+                        </div>
+                        <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      </div>
+                      <input
+                        id="onboarding-i9-input"
+                        type="file"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0] || null;
+                          setI9File(f);
+                          setFormData({ ...formData, i9FileName: f?.name || "" });
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
 
-                {/* Signature & Generated PDF */}
+                {/* Signature & Generated PDF File Uploads */}
                 <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
                   <div className="flex-1 min-w-0">
-                    <label className="block text-xs sm:text-sm font-medium mb-1.5">Signature (File Name)</label>
-                    <Input
-                      value={formData.signatureFileName}
-                      onChange={(e) => setFormData({ ...formData, signatureFileName: e.target.value })}
-                      placeholder="e.g., signature.png"
-                      className="h-9 sm:h-10 text-sm sm:text-base"
-                    />
+                    <label className="block text-xs sm:text-sm font-medium mb-1.5">Signature Document</label>
+                    <div
+                      className="w-full rounded-md border px-3 py-3 text-sm sm:text-base bg-muted/20 hover:bg-muted/30 transition-colors cursor-pointer"
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const f = e.dataTransfer.files?.[0];
+                        if (f) {
+                          setSignatureFile(f);
+                          setFormData({ ...formData, signatureFileName: f.name });
+                        }
+                      }}
+                      onClick={() => {
+                        const el = document.getElementById("onboarding-sig-input") as HTMLInputElement | null;
+                        el?.click();
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          const el = document.getElementById("onboarding-sig-input") as HTMLInputElement | null;
+                          el?.click();
+                        }
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-xs sm:text-sm font-medium truncate">
+                            {signatureFile ? signatureFile.name : "Click to choose or drag & drop"}
+                          </p>
+                          <p className="text-[10px] sm:text-xs text-muted-foreground">
+                            Max 10MB
+                          </p>
+                        </div>
+                        <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      </div>
+                      <input
+                        id="onboarding-sig-input"
+                        type="file"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0] || null;
+                          setSignatureFile(f);
+                          setFormData({ ...formData, signatureFileName: f?.name || "" });
+                        }}
+                      />
+                    </div>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <label className="block text-xs sm:text-sm font-medium mb-1.5">Generated PDF (File Name)</label>
-                    <Input
-                      value={formData.generatedPdfFileName}
-                      onChange={(e) =>
-                        setFormData({ ...formData, generatedPdfFileName: e.target.value })
-                      }
-                      placeholder="e.g., onboarding_packet.pdf"
-                      className="h-9 sm:h-10 text-sm sm:text-base"
-                    />
+                    <label className="block text-xs sm:text-sm font-medium mb-1.5">Generated PDF</label>
+                    <div
+                      className="w-full rounded-md border px-3 py-3 text-sm sm:text-base bg-muted/20 hover:bg-muted/30 transition-colors cursor-pointer"
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const f = e.dataTransfer.files?.[0];
+                        if (f) {
+                          setGeneratedPdfFile(f);
+                          setFormData({ ...formData, generatedPdfFileName: f.name });
+                        }
+                      }}
+                      onClick={() => {
+                        const el = document.getElementById("onboarding-pdf-input") as HTMLInputElement | null;
+                        el?.click();
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          const el = document.getElementById("onboarding-pdf-input") as HTMLInputElement | null;
+                          el?.click();
+                        }
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-xs sm:text-sm font-medium truncate">
+                            {generatedPdfFile ? generatedPdfFile.name : "Click to choose or drag & drop"}
+                          </p>
+                          <p className="text-[10px] sm:text-xs text-muted-foreground">
+                            Max 10MB
+                          </p>
+                        </div>
+                        <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      </div>
+                      <input
+                        id="onboarding-pdf-input"
+                        type="file"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0] || null;
+                          setGeneratedPdfFile(f);
+                          setFormData({ ...formData, generatedPdfFileName: f?.name || "" });
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
               </form>

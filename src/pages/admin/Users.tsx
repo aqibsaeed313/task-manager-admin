@@ -452,7 +452,6 @@ const Users = () => {
                       >
                         <option value="admin">Admin</option>
                         <option value="manager">Manager</option>
-                        <option value="employee">Employee</option>
                       </select>
                     </div>
                     <div className="flex-1 space-y-1.5">

@@ -126,8 +126,10 @@ export function Sidebar({ collapsed, onToggle, open = false, onClose }: SidebarP
       <aside
         className={cn(
           "fixed left-0 top-0 h-screen bg-sidebar flex flex-col transition-all duration-300 z-50",
-          // Width - responsive
-          collapsed ? "w-[72px] sm:w-20" : "w-64 sm:w-64",
+          // Width - responsive: full width on mobile, normal width on desktop
+          collapsed 
+            ? "w-[72px] sm:w-20" 
+            : "w-[85vw] sm:w-72 md:w-64",
           // Mobile positioning
           "-translate-x-full md:translate-x-0",
           open && "translate-x-0",
@@ -171,7 +173,7 @@ export function Sidebar({ collapsed, onToggle, open = false, onClose }: SidebarP
         </div>
 
         {/* Main Navigation - Responsive scroll */}
-        <nav className="flex-1 p-2 sm:p-3 space-y-0.5 sm:space-y-1 overflow-y-auto overflow-x-hidden">
+        <nav className="flex-1 p-2 sm:p-3 space-y-0.5 sm:space-y-1 overflow-y-auto overflow-x-hidden no-scrollbar">
           {menuItems.map((item) => (
             <NavItem key={item.path} icon={item.icon} label={item.label} path={item.path} />
           ))}

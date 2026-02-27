@@ -16,6 +16,7 @@ import DoNotHire from "@/pages/admin/DoNotHire";
 import Onboarding from "@/pages/admin/Onboarding";
 import Reports from "@/pages/admin/Reports";
 import Settings from "@/pages/admin/Settings";
+import Profile from "@/pages/admin/Profile";
 import RolesPermissions from "@/pages/admin/RolesPermissions";
 import NotFound from "@/pages/admin/NotFound";
 
@@ -40,6 +41,7 @@ export default function AdminRoutes() {
       { path: "onboarding", element: <Onboarding /> },
       { path: "reports", element: <Reports /> },
       { path: "settings", element: <Settings /> },
+      { path: "profile", element: <Profile /> },
       { path: "*", element: <NotFound /> },
     ],
     [],

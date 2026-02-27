@@ -34,6 +34,22 @@ interface TimeEntry {
   status: "clocked-in" | "clocked-out" | "on-break";
 }
 
+interface Employee {
+  id: string;
+  name: string;
+  initials: string;
+  email: string;
+  status: "active" | "inactive" | "on-leave";
+}
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: "admin" | "manager" | "employee";
+  status: "active" | "inactive" | "pending";
+}
+
 const seedEntries: TimeEntry[] = [
   {
     id: "1",
@@ -142,6 +158,7 @@ const TimeTracking = () => {
   const [apiError, setApiError] = useState<string | null>(null);
 
   const [entries, setEntries] = useState<TimeEntry[]>(() => []);
+  const [employees, setEmployees] = useState<Employee[]>([]);
 
   const [formData, setFormData] = useState({
     employee: "",
@@ -158,9 +175,56 @@ const TimeTracking = () => {
       try {
         setLoading(true);
         setApiError(null);
+        
+        // Fetch time entries
         const list = await listResource<TimeEntry>("time-entries");
         if (!mounted) return;
         setEntries(list);
+        
+        // Fetch employees from employees API
+        let allEmployees: Employee[] = [];
+        try {
+          const employeeList = await listResource<Employee>("employees");
+          if (mounted) {
+            allEmployees = employeeList.filter((e) => e.status === "active");
+          }
+        } catch (empErr) {
+          console.error("Failed to load employees:", empErr);
+        }
+        
+        // Fetch users with employee role from users API
+        try {
+          const userList = await listResource<User>("users");
+          if (mounted) {
+            const employeeUsers = userList
+              .filter((u) => u.role === "employee" && (u.status === "active" || u.status === "pending"))
+              .map((u) => ({
+                id: u.id,
+                name: u.name,
+                initials: u.name
+                  .split(" ")
+                  .map((n) => n[0])
+                  .slice(0, 2)
+                  .join("")
+                  .toUpperCase(),
+                email: u.email,
+                status: "active" as const,
+              }));
+            
+            // Merge both lists (remove duplicates by email)
+            employeeUsers.forEach((eu) => {
+              if (!allEmployees.some((e) => e.email === eu.email)) {
+                allEmployees.push(eu);
+              }
+            });
+          }
+        } catch (userErr) {
+          console.error("Failed to load users:", userErr);
+        }
+        
+        if (mounted) {
+          setEmployees(allEmployees);
+        }
       } catch (e) {
         if (!mounted) return;
         setApiError(e instanceof Error ? e.message : "Failed to load time entries");
@@ -336,13 +400,22 @@ const TimeTracking = () => {
                 <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
                   <div className="flex-1 min-w-0">
                     <label className="block text-xs sm:text-sm font-medium mb-1.5">Employee *</label>
-                    <Input
+                    <select
                       value={formData.employee}
                       onChange={(e) => setFormData({ ...formData, employee: e.target.value })}
-                      placeholder="John Doe"
                       required
-                      className="h-9 sm:h-10 text-sm sm:text-base"
-                    />
+                      className="w-full rounded-md border px-3 py-2 text-sm sm:text-base bg-white h-9 sm:h-10"
+                    >
+                      <option value="">Select employee</option>
+                      {employees.map((emp) => (
+                        <option key={emp.id} value={emp.name}>
+                          {emp.name}
+                        </option>
+                      ))}
+                    </select>
+                    {employees.length === 0 && (
+                      <p className="text-xs text-warning mt-1">No employees found.</p>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <label className="block text-xs sm:text-sm font-medium mb-1.5">Location *</label>

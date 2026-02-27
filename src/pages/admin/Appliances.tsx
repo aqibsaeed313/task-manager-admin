@@ -35,7 +35,11 @@ import {
   Edit,
   Trash2,
   Wrench,
+  Power,
+  FileText,
+  User,
 } from "lucide-react";
+import { listResource } from "@/lib/admin/apiClient";
 
 interface Appliance {
   id: string;
@@ -46,42 +50,26 @@ interface Appliance {
   warrantyUntil: string;
   status: "active" | "inactive";
   tagPhotoFileName?: string;
+  assignedTo?: string;
+}
+
+interface Employee {
+  id: string;
+  name: string;
+  initials: string;
+  email: string;
+  status: "active" | "inactive" | "on-leave";
+}
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: "admin" | "manager" | "employee";
+  status: "active" | "inactive" | "pending";
 }
 
 const APPLIANCES_STORAGE_KEY = "appliances";
-
-const seedAppliances: Appliance[] = [
-  {
-    id: "APP-001",
-    name: "Dishwasher - Kitchen 1",
-    type: "residential",
-    location: "Residential Complex D",
-    purchaseDate: "2023-02-10",
-    warrantyUntil: "2025-02-10",
-    status: "active",
-    tagPhotoFileName: "tag_app_001.jpg",
-  },
-  {
-    id: "APP-002",
-    name: "HVAC Unit - Floor 3",
-    type: "commercial",
-    location: "Building A - Corporate Office",
-    purchaseDate: "2022-05-01",
-    warrantyUntil: "2026-05-01",
-    status: "active",
-    tagPhotoFileName: "hvac_tag.png",
-  },
-  {
-    id: "APP-003",
-    name: "Generator - Backup",
-    type: "commercial",
-    location: "Warehouse C",
-    purchaseDate: "2020-09-15",
-    warrantyUntil: "2023-09-15",
-    status: "inactive",
-    tagPhotoFileName: "",
-  },
-];
 
 const statusClasses = {
   active: "bg-success/10 text-success",
@@ -99,19 +87,21 @@ export default function Appliances() {
   const [viewOpen, setViewOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [deactivateOpen, setDeactivateOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const [selected, setSelected] = useState<Appliance | null>(null);
 
   const [appliancesList, setAppliancesList] = useState<Appliance[]>(() => {
     const saved = localStorage.getItem(APPLIANCES_STORAGE_KEY);
-    if (!saved) return seedAppliances.filter(Boolean);
+    if (!saved) return [];
     try {
       const parsed = JSON.parse(saved) as unknown;
       if (Array.isArray(parsed)) return parsed as Appliance[];
     } catch {
       // ignore
     }
-    return seedAppliances.filter(Boolean);
+    return [];
   });
+  const [employees, setEmployees] = useState<Employee[]>([]);
 
   const [formData, setFormData] = useState({
     name: "",
@@ -121,7 +111,10 @@ export default function Appliances() {
     warrantyUntil: "",
     status: "active" as Appliance["status"],
     tagPhotoFileName: "",
+    assignedTo: "",
   });
+
+  const [tagPhotoFile, setTagPhotoFile] = useState<File | null>(null);
 
   const [editFormData, setEditFormData] = useState({
     name: "",
@@ -131,11 +124,68 @@ export default function Appliances() {
     warrantyUntil: "",
     status: "active" as Appliance["status"],
     tagPhotoFileName: "",
+    assignedTo: "",
   });
 
   useEffect(() => {
     localStorage.setItem(APPLIANCES_STORAGE_KEY, JSON.stringify(appliancesList));
   }, [appliancesList]);
+
+  // Fetch employees for dropdown
+  useEffect(() => {
+    let mounted = true;
+    const loadEmployees = async () => {
+      try {
+        let allEmployees: Employee[] = [];
+        // Fetch from employees API
+        try {
+          const employeeList = await listResource<Employee>("employees");
+          if (mounted) {
+            allEmployees = employeeList.filter((e) => e.status === "active");
+          }
+        } catch (empErr) {
+          console.error("Failed to load employees:", empErr);
+        }
+        // Fetch users with employee role
+        try {
+          const userList = await listResource<User>("users");
+          if (mounted) {
+            const employeeUsers = userList
+              .filter((u) => u.role === "employee" && (u.status === "active" || u.status === "pending"))
+              .map((u) => ({
+                id: u.id,
+                name: u.name,
+                initials: u.name
+                  .split(" ")
+                  .map((n) => n[0])
+                  .slice(0, 2)
+                  .join("")
+                  .toUpperCase(),
+                email: u.email,
+                status: "active" as const,
+              }));
+            // Merge and remove duplicates
+            employeeUsers.forEach((eu) => {
+              if (!allEmployees.some((e) => e.email === eu.email)) {
+                allEmployees.push(eu);
+              }
+            });
+          }
+        } catch (userErr) {
+          console.error("Failed to load users:", userErr);
+        }
+        if (mounted) {
+          setEmployees(allEmployees);
+        }
+      } catch (e) {
+        console.error("Failed to load employees:", e);
+      }
+    };
+    void loadEmployees();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -160,6 +210,7 @@ export default function Appliances() {
       warrantyUntil: formData.warrantyUntil,
       status: formData.status,
       tagPhotoFileName: formData.tagPhotoFileName || "",
+      assignedTo: formData.assignedTo || "",
     };
     setAppliancesList((prev) => [next, ...prev]);
     setAddOpen(false);
@@ -171,7 +222,9 @@ export default function Appliances() {
       warrantyUntil: "",
       status: "active",
       tagPhotoFileName: "",
+      assignedTo: "",
     });
+    setTagPhotoFile(null);
   };
 
   const onView = (a: Appliance) => {
@@ -189,6 +242,7 @@ export default function Appliances() {
       warrantyUntil: a.warrantyUntil,
       status: a.status,
       tagPhotoFileName: a.tagPhotoFileName || "",
+      assignedTo: a.assignedTo || "",
     });
     setEditOpen(true);
   };
@@ -209,6 +263,7 @@ export default function Appliances() {
               warrantyUntil: editFormData.warrantyUntil,
               status: editFormData.status,
               tagPhotoFileName: editFormData.tagPhotoFileName || "",
+              assignedTo: editFormData.assignedTo || "",
             }
       )
     );
@@ -234,6 +289,18 @@ export default function Appliances() {
       )
     );
     setDeactivateOpen(false);
+    setSelected(null);
+  };
+
+  const onDelete = (a: Appliance) => {
+    setSelected(a);
+    setDeleteOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (!selected) return;
+    setAppliancesList((prev) => prev.filter((a) => a.id !== selected.id));
+    setDeleteOpen(false);
     setSelected(null);
   };
 
@@ -297,17 +364,81 @@ export default function Appliances() {
                   </div>
                 </div>
 
-                {/* Tag Photo */}
+                {/* Assigned To */}
+                <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+                  <div className="flex-1 min-w-0">
+                    <label className="block text-xs sm:text-sm font-medium mb-1.5">Assigned To</label>
+                    <select
+                      value={formData.assignedTo}
+                      onChange={(e) => setFormData({ ...formData, assignedTo: e.target.value })}
+                      className="w-full rounded-md border px-3 py-2 text-sm sm:text-base bg-white"
+                    >
+                      <option value="">Select assignee</option>
+                      {employees.map((emp) => (
+                        <option key={emp.id} value={emp.name}>
+                          {emp.name}
+                        </option>
+                      ))}
+                    </select>
+                    {employees.length === 0 && (
+                      <p className="text-xs text-warning mt-1">No employees found.</p>
+                    )}
+                  </div>
+                </div>
+
+                {/* Tag Photo File Upload */}
                 <div>
                   <label className="block text-xs sm:text-sm font-medium mb-1.5">
-                    Tag Photo (File Name)
+                    Tag Photo
                   </label>
-                  <input
-                    value={formData.tagPhotoFileName}
-                    onChange={(e) => setFormData({ ...formData, tagPhotoFileName: e.target.value })}
-                    className="w-full rounded-md border px-3 py-2 text-sm sm:text-base"
-                    placeholder="e.g., tag_photo.jpg"
-                  />
+                  <div
+                    className="w-full rounded-md border px-3 py-3 text-sm sm:text-base bg-muted/20 hover:bg-muted/30 transition-colors cursor-pointer"
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const f = e.dataTransfer.files?.[0];
+                      if (f) {
+                        setTagPhotoFile(f);
+                        setFormData({ ...formData, tagPhotoFileName: f.name });
+                      }
+                    }}
+                    onClick={() => {
+                      const el = document.getElementById("appliance-tag-input") as HTMLInputElement | null;
+                      el?.click();
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        const el = document.getElementById("appliance-tag-input") as HTMLInputElement | null;
+                        el?.click();
+                      }
+                    }}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs sm:text-sm font-medium truncate">
+                          {tagPhotoFile ? tagPhotoFile.name : "Click to choose or drag & drop a file"}
+                        </p>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground">
+                          Max 10MB
+                        </p>
+                      </div>
+                      <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    </div>
+                    <input
+                      id="appliance-tag-input"
+                      type="file"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0] || null;
+                        setTagPhotoFile(f);
+                        setFormData({ ...formData, tagPhotoFileName: f?.name || "" });
+                      }}
+                    />
+                  </div>
                 </div>
 
                 {/* Type, Purchase, Warranty - Stack on mobile, grid on tablet+ */}
@@ -440,8 +571,15 @@ export default function Appliances() {
                           onClick={() => onDeactivate(a)}
                           className="text-destructive"
                         >
-                          <Trash2 className="mr-2 h-4 w-4" />
+                          <Power className="mr-2 h-4 w-4" />
                           {a.status === "inactive" ? "Activate" : "Deactivate"}
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={() => onDelete(a)}
+                          className="text-destructive"
+                        >
+                          <Trash2 className="mr-2 h-4 w-4" />
+                          Delete
                         </DropdownMenuItem>
                       </DropdownMenuContent>
                     </DropdownMenu>
@@ -545,8 +683,15 @@ export default function Appliances() {
                               onClick={() => onDeactivate(a)}
                               className="text-destructive"
                             >
-                              <Trash2 className="mr-2 h-4 w-4" />
+                              <Power className="mr-2 h-4 w-4" />
                               {a.status === "inactive" ? "Activate" : "Deactivate"}
+                            </DropdownMenuItem>
+                            <DropdownMenuItem
+                              onClick={() => onDelete(a)}
+                              className="text-destructive"
+                            >
+                              <Trash2 className="mr-2 h-4 w-4" />
+                              Delete
                             </DropdownMenuItem>
                           </DropdownMenuContent>
                         </DropdownMenu>
@@ -677,6 +822,25 @@ export default function Appliances() {
                 />
               </div>
 
+              {/* Assigned To */}
+              <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+                <div className="flex-1 min-w-0">
+                  <label className="block text-xs sm:text-sm font-medium mb-1.5">Assigned To</label>
+                  <select
+                    value={editFormData.assignedTo}
+                    onChange={(e) => setEditFormData({ ...editFormData, assignedTo: e.target.value })}
+                    className="w-full rounded-md border px-3 py-2 text-sm sm:text-base bg-white"
+                  >
+                    <option value="">Select assignee</option>
+                    {employees.map((emp) => (
+                      <option key={emp.id} value={emp.name}>
+                        {emp.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
               {/* Type, Purchase, Warranty */}
               <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
                 <div className="flex-1 min-w-0">
@@ -783,6 +947,43 @@ export default function Appliances() {
               className="w-full sm:w-auto order-1 sm:order-2"
             >
               {selected?.status === "inactive" ? "Activate" : "Deactivate"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {/* Delete Confirm Dialog - Responsive */}
+      <Dialog open={deleteOpen} onOpenChange={setDeleteOpen}>
+        <DialogContent className="w-[95vw] max-w-md mx-auto p-4 sm:p-6">
+          <DialogHeader className="space-y-1.5 sm:space-y-2">
+            <DialogTitle className="text-base sm:text-lg text-destructive">
+              Delete Appliance
+            </DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm">
+              This action cannot be undone. The appliance will be permanently removed.
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selected && (
+            <div className="rounded-md bg-muted p-3 sm:p-4 text-xs sm:text-sm mt-2">
+              <p className="font-medium break-words">{selected.name}</p>
+              <p className="text-muted-foreground text-xs sm:text-sm break-words">{selected.id}</p>
+            </div>
+          )}
+          
+          <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-3 mt-4 sm:mt-6">
+            <Button 
+              variant="outline" 
+              onClick={() => setDeleteOpen(false)}
+              className="w-full sm:w-auto order-2 sm:order-1"
+            >
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={confirmDelete}
+              className="w-full sm:w-auto order-1 sm:order-2"
+            >
+              Delete
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -44,7 +44,7 @@ import {
   Hash,
   FileSignature,
 } from "lucide-react";
-import { createResource, deleteResource, listResource, updateResource } from "@/lib/admin/apiClient";
+import { createResource, deleteResource, listResource, updateResource, apiFetch } from "@/lib/admin/apiClient";
 
 interface Vehicle {
   id: string;
@@ -62,77 +62,21 @@ interface Vehicle {
   insuranceFileName?: string;
 }
 
-const vehicles: Vehicle[] = [
-  {
-    id: "VH-001",
-    make: "Ford",
-    model: "F-150",
-    year: "2022",
-    licensePlate: "ABC-1234",
-    vin: "1FTEW1EP5NFA12345",
-    mileage: "25,430 mi",
-    status: "active",
-    lastInspection: "2023-12-15",
-    nextInspection: "2024-06-15",
-    assignedTo: "John Doe",
-    registrationFileName: "registration_vh_001.pdf",
-    insuranceFileName: "insurance_vh_001.pdf",
-  },
-  {
-    id: "VH-002",
-    make: "Chevrolet",
-    model: "Express Van",
-    year: "2021",
-    licensePlate: "DEF-5678",
-    vin: "1GCGG25K571234567",
-    mileage: "42,150 mi",
-    status: "active",
-    lastInspection: "2023-11-20",
-    nextInspection: "2024-05-20",
-    assignedTo: "Mike Johnson",
-    registrationFileName: "reg_vh_002.pdf",
-    insuranceFileName: "insurance_vh_002.pdf",
-  },
-  {
-    id: "VH-003",
-    make: "Toyota",
-    model: "Tacoma",
-    year: "2023",
-    licensePlate: "GHI-9012",
-    vin: "5TFCZ5AN1PX123456",
-    mileage: "12,890 mi",
-    status: "maintenance",
-    lastInspection: "2024-01-05",
-    nextInspection: "2024-07-05",
-    assignedTo: "Emily Brown",
-  },
-  {
-    id: "VH-004",
-    make: "RAM",
-    model: "ProMaster",
-    year: "2020",
-    licensePlate: "JKL-3456",
-    vin: "3C6TRVDG4LE123456",
-    mileage: "68,200 mi",
-    status: "active",
-    lastInspection: "2023-10-10",
-    nextInspection: "2024-04-10",
-    assignedTo: "Alex Wilson",
-  },
-  {
-    id: "VH-005",
-    make: "Ford",
-    model: "Transit",
-    year: "2019",
-    licensePlate: "MNO-7890",
-    vin: "1FTBW2CM8KKB12345",
-    mileage: "89,500 mi",
-    status: "inactive",
-    lastInspection: "2023-08-25",
-    nextInspection: "2024-02-25",
-    assignedTo: "-",
-  },
-];
+interface Employee {
+  id: string;
+  name: string;
+  initials: string;
+  email: string;
+  status: "active" | "inactive" | "on-leave";
+}
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: "admin" | "manager" | "employee";
+  status: "active" | "inactive" | "pending";
+}
 
 const statusClasses = {
   active: "bg-success/10 text-success",
@@ -163,6 +107,7 @@ const Vehicles = () => {
   const [editVehicleOpen, setEditVehicleOpen] = useState(false);
   const [removeConfirmOpen, setRemoveConfirmOpen] = useState(false);
   const [vehiclesList, setVehiclesList] = useState<Vehicle[]>(() => []);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
@@ -179,6 +124,9 @@ const Vehicles = () => {
     registrationFileName: "",
     insuranceFileName: "",
   });
+
+  const [registrationFile, setRegistrationFile] = useState<File | null>(null);
+  const [insuranceFile, setInsuranceFile] = useState<File | null>(null);
 
   const [editFormData, setEditFormData] = useState({
     make: "",
@@ -201,9 +149,56 @@ const Vehicles = () => {
       try {
         setLoading(true);
         setApiError(null);
+        
+        // Fetch vehicles
         const list = await listResource<Vehicle>("vehicles");
         if (!mounted) return;
         setVehiclesList(list);
+        
+        // Fetch employees from employees API
+        let allEmployees: Employee[] = [];
+        try {
+          const employeeList = await listResource<Employee>("employees");
+          if (mounted) {
+            allEmployees = employeeList.filter((e) => e.status === "active");
+          }
+        } catch (empErr) {
+          console.error("Failed to load employees:", empErr);
+        }
+        
+        // Fetch users with employee role from users API
+        try {
+          const userList = await listResource<User>("users");
+          if (mounted) {
+            const employeeUsers = userList
+              .filter((u) => u.role === "employee" && (u.status === "active" || u.status === "pending"))
+              .map((u) => ({
+                id: u.id,
+                name: u.name,
+                initials: u.name
+                  .split(" ")
+                  .map((n) => n[0])
+                  .slice(0, 2)
+                  .join("")
+                  .toUpperCase(),
+                email: u.email,
+                status: "active" as const,
+              }));
+            
+            // Merge both lists (remove duplicates by email)
+            employeeUsers.forEach((eu) => {
+              if (!allEmployees.some((e) => e.email === eu.email)) {
+                allEmployees.push(eu);
+              }
+            });
+          }
+        } catch (userErr) {
+          console.error("Failed to load users:", userErr);
+        }
+        
+        if (mounted) {
+          setEmployees(allEmployees);
+        }
       } catch (e) {
         if (!mounted) return;
         setApiError(e instanceof Error ? e.message : "Failed to load vehicles");
@@ -223,8 +218,20 @@ const Vehicles = () => {
     setVehiclesList(list);
   };
 
+  const [formError, setFormError] = useState<string | null>(null);
+
   const handleAddVehicle = async () => {
-    if (!formData.make || !formData.model || !formData.year || !formData.licensePlate) return;
+    // Validation with user-friendly error messages
+    if (!formData.make || !formData.model || !formData.year || !formData.licensePlate) {
+      const missingFields = [];
+      if (!formData.make) missingFields.push("Make");
+      if (!formData.model) missingFields.push("Model");
+      if (!formData.year) missingFields.push("Year");
+      if (!formData.licensePlate) missingFields.push("License Plate");
+      setFormError(`Please fill in the required fields: ${missingFields.join(", ")}`);
+      return;
+    }
+    setFormError(null);
     try {
       setApiError(null);
       const newVehicle: Vehicle = {
@@ -242,9 +249,31 @@ const Vehicles = () => {
         registrationFileName: formData.registrationFileName || "",
         insuranceFileName: formData.insuranceFileName || "",
       };
-      await createResource<Vehicle>("vehicles", newVehicle);
+      if (registrationFile || insuranceFile) {
+        const fd = new FormData();
+        fd.append("make", formData.make);
+        fd.append("model", formData.model);
+        fd.append("year", formData.year);
+        fd.append("licensePlate", formData.licensePlate);
+        fd.append("vin", formData.vin);
+        fd.append("mileage", formData.mileage);
+        fd.append("status", formData.status);
+        fd.append("lastInspection", formData.lastInspection);
+        fd.append("nextInspection", formData.nextInspection);
+        fd.append("assignedTo", formData.assignedTo || "-");
+        if (registrationFile) fd.append("registrationFile", registrationFile);
+        if (insuranceFile) fd.append("insuranceFile", insuranceFile);
+
+        await apiFetch<{ item: Vehicle }>("/api/vehicles/upload", {
+          method: "POST",
+          body: fd,
+        });
+      } else {
+        await createResource<Vehicle>("vehicles", newVehicle);
+      }
       await refreshVehicles();
       setAddVehicleOpen(false);
+      setFormError(null);
       setFormData({
         make: "",
         model: "",
@@ -259,6 +288,8 @@ const Vehicles = () => {
         registrationFileName: "",
         insuranceFileName: "",
       });
+      setRegistrationFile(null);
+      setInsuranceFile(null);
     } catch (e) {
       setApiError(e instanceof Error ? e.message : "Failed to add vehicle");
     }
@@ -288,9 +319,21 @@ const Vehicles = () => {
     setEditVehicleOpen(true);
   };
 
+  const [editFormError, setEditFormError] = useState<string | null>(null);
+
   const saveEditVehicle = async () => {
     if (!selectedVehicle) return;
-    if (!editFormData.make || !editFormData.model || !editFormData.year || !editFormData.licensePlate) return;
+    // Validation with user-friendly error messages
+    if (!editFormData.make || !editFormData.model || !editFormData.year || !editFormData.licensePlate) {
+      const missingFields = [];
+      if (!editFormData.make) missingFields.push("Make");
+      if (!editFormData.model) missingFields.push("Model");
+      if (!editFormData.year) missingFields.push("Year");
+      if (!editFormData.licensePlate) missingFields.push("License Plate");
+      setEditFormError(`Please fill in the required fields: ${missingFields.join(", ")}`);
+      return;
+    }
+    setEditFormError(null);
     try {
       setApiError(null);
       await updateResource<Vehicle>("vehicles", selectedVehicle.id, {
@@ -311,6 +354,7 @@ const Vehicles = () => {
       await refreshVehicles();
       setEditVehicleOpen(false);
       setSelectedVehicle(null);
+      setEditFormError(null);
     } catch (e) {
       setApiError(e instanceof Error ? e.message : "Failed to update vehicle");
     }
@@ -391,7 +435,17 @@ const Vehicles = () => {
                 </DialogDescription>
               </DialogHeader>
 
-              <form className="space-y-4 sm:space-y-5">
+              <form className="space-y-4 sm:space-y-5" onSubmit={(e) => { e.preventDefault(); handleAddVehicle(); }}>
+                {/* Form Validation Error */}
+                {formError && (
+                  <div className="rounded-md bg-destructive/10 p-3 sm:p-4 border border-destructive/20">
+                    <p className="text-xs sm:text-sm text-destructive flex items-center gap-2">
+                      <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                      {formError}
+                    </p>
+                  </div>
+                )}
+
                 {/* Make, Model, Year */}
                 <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
                   <div className="flex-1 min-w-0">
@@ -468,13 +522,21 @@ const Vehicles = () => {
                   </div>
                   <div className="flex-1 min-w-0">
                     <label className="block text-xs sm:text-sm font-medium mb-1.5">Assigned To</label>
-                    <input
-                      type="text"
+                    <select
                       value={formData.assignedTo}
                       onChange={(e) => setFormData({ ...formData, assignedTo: e.target.value })}
-                      className="w-full rounded-md border px-3 py-2 text-sm sm:text-base h-9 sm:h-10"
-                      placeholder="John Doe"
-                    />
+                      className="w-full rounded-md border px-3 py-2 text-sm sm:text-base bg-white h-9 sm:h-10"
+                    >
+                      <option value="">Select assignee</option>
+                      {employees.map((emp) => (
+                        <option key={emp.id} value={emp.name}>
+                          {emp.name}
+                        </option>
+                      ))}
+                    </select>
+                    {employees.length === 0 && (
+                      <p className="text-xs text-warning mt-1">No employees found.</p>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <label className="block text-xs sm:text-sm font-medium mb-1.5">Status</label>
@@ -514,33 +576,116 @@ const Vehicles = () => {
                   </div>
                 </div>
 
-                {/* Document File Names */}
+                {/* Document File Uploads */}
                 <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
                   <div className="flex-1 min-w-0">
-                    <label className="block text-xs sm:text-sm font-medium mb-1.5">Registration (File Name)</label>
-                    <input
-                      type="text"
-                      value={formData.registrationFileName}
-                      onChange={(e) => setFormData({ ...formData, registrationFileName: e.target.value })}
-                      className="w-full rounded-md border px-3 py-2 text-sm sm:text-base h-9 sm:h-10"
-                      placeholder="e.g., registration.pdf"
-                    />
+                    <label className="block text-xs sm:text-sm font-medium mb-1.5">Registration Document</label>
+                    <div
+                      className="w-full rounded-md border px-3 py-3 text-sm sm:text-base bg-muted/20 hover:bg-muted/30 transition-colors cursor-pointer"
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const f = e.dataTransfer.files?.[0];
+                        if (f) {
+                          setRegistrationFile(f);
+                          setFormData({ ...formData, registrationFileName: f.name });
+                        }
+                      }}
+                      onClick={() => {
+                        const el = document.getElementById("vehicle-reg-input") as HTMLInputElement | null;
+                        el?.click();
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          const el = document.getElementById("vehicle-reg-input") as HTMLInputElement | null;
+                          el?.click();
+                        }
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-xs sm:text-sm font-medium truncate">
+                            {registrationFile ? registrationFile.name : "Click to choose or drag & drop"}
+                          </p>
+                          <p className="text-[10px] sm:text-xs text-muted-foreground">
+                            Max 10MB
+                          </p>
+                        </div>
+                        <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      </div>
+                      <input
+                        id="vehicle-reg-input"
+                        type="file"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0] || null;
+                          setRegistrationFile(f);
+                          setFormData({ ...formData, registrationFileName: f?.name || "" });
+                        }}
+                      />
+                    </div>
                   </div>
                   <div className="flex-1 min-w-0">
-                    <label className="block text-xs sm:text-sm font-medium mb-1.5">Insurance (File Name)</label>
-                    <input
-                      type="text"
-                      value={formData.insuranceFileName}
-                      onChange={(e) => setFormData({ ...formData, insuranceFileName: e.target.value })}
-                      className="w-full rounded-md border px-3 py-2 text-sm sm:text-base h-9 sm:h-10"
-                      placeholder="e.g., insurance.pdf"
-                    />
+                    <label className="block text-xs sm:text-sm font-medium mb-1.5">Insurance Document</label>
+                    <div
+                      className="w-full rounded-md border px-3 py-3 text-sm sm:text-base bg-muted/20 hover:bg-muted/30 transition-colors cursor-pointer"
+                      onDragOver={(e) => {
+                        e.preventDefault();
+                      }}
+                      onDrop={(e) => {
+                        e.preventDefault();
+                        const f = e.dataTransfer.files?.[0];
+                        if (f) {
+                          setInsuranceFile(f);
+                          setFormData({ ...formData, insuranceFileName: f.name });
+                        }
+                      }}
+                      onClick={() => {
+                        const el = document.getElementById("vehicle-ins-input") as HTMLInputElement | null;
+                        el?.click();
+                      }}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          const el = document.getElementById("vehicle-ins-input") as HTMLInputElement | null;
+                          el?.click();
+                        }
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-xs sm:text-sm font-medium truncate">
+                            {insuranceFile ? insuranceFile.name : "Click to choose or drag & drop"}
+                          </p>
+                          <p className="text-[10px] sm:text-xs text-muted-foreground">
+                            Max 10MB
+                          </p>
+                        </div>
+                        <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                      </div>
+                      <input
+                        id="vehicle-ins-input"
+                        type="file"
+                        className="hidden"
+                        onChange={(e) => {
+                          const f = e.target.files?.[0] || null;
+                          setInsuranceFile(f);
+                          setFormData({ ...formData, insuranceFileName: f?.name || "" });
+                        }}
+                      />
+                    </div>
                   </div>
                 </div>
               </form>
 
               <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-3 mt-4 sm:mt-6">
                 <Button 
+                  type="button"
                   variant="outline" 
                   onClick={() => setAddVehicleOpen(false)}
                   className="w-full sm:w-auto order-2 sm:order-1"
@@ -548,7 +693,8 @@ const Vehicles = () => {
                   Cancel
                 </Button>
                 <Button 
-                  onClick={handleAddVehicle} 
+                  type="button"
+                  onClick={handleAddVehicle}
                   className="bg-accent hover:bg-accent/90 text-accent-foreground w-full sm:w-auto order-1 sm:order-2"
                 >
                   <Plus className="h-4 w-4 mr-2 flex-shrink-0" />
@@ -1027,6 +1173,16 @@ const Vehicles = () => {
           </DialogHeader>
           {selectedVehicle && (
             <form className="space-y-4 sm:space-y-5">
+              {/* Form Validation Error */}
+              {editFormError && (
+                <div className="rounded-md bg-destructive/10 p-3 sm:p-4 border border-destructive/20">
+                  <p className="text-xs sm:text-sm text-destructive flex items-center gap-2">
+                    <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                    {editFormError}
+                  </p>
+                </div>
+              )}
+
               {/* Make, Model, Year */}
               <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
                 <div className="flex-1 min-w-0">
@@ -1097,12 +1253,18 @@ const Vehicles = () => {
                 </div>
                 <div className="flex-1 min-w-0">
                   <label className="block text-xs sm:text-sm font-medium mb-1.5">Assigned To</label>
-                  <input
-                    type="text"
+                  <select
                     value={editFormData.assignedTo}
                     onChange={(e) => setEditFormData({ ...editFormData, assignedTo: e.target.value })}
-                    className="w-full rounded-md border px-3 py-2 text-sm sm:text-base h-9 sm:h-10"
-                  />
+                    className="w-full rounded-md border px-3 py-2 text-sm sm:text-base bg-white h-9 sm:h-10"
+                  >
+                    <option value="">Select assignee</option>
+                    {employees.map((emp) => (
+                      <option key={emp.id} value={emp.name}>
+                        {emp.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="flex-1 min-w-0">
                   <label className="block text-xs sm:text-sm font-medium mb-1.5">Status</label>

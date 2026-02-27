@@ -33,10 +33,27 @@ import { createResource, deleteResource, listResource, updateResource } from "@/
 interface BlacklistItem {
   id: string;
   name: string;
+  employeeId?: string;
   reason: string;
   incidentNotes: string;
   addedAt: string;
   status: "active" | "resolved";
+}
+
+interface Employee {
+  id: string;
+  name: string;
+  initials: string;
+  email: string;
+  status: "active" | "inactive" | "on-leave";
+}
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: "admin" | "manager" | "employee";
+  status: "active" | "inactive" | "pending";
 }
 
 const seedItems: BlacklistItem[] = [
@@ -68,9 +85,11 @@ export default function DoNotHire() {
   const [apiError, setApiError] = useState<string | null>(null);
 
   const [items, setItems] = useState<BlacklistItem[]>(() => []);
+  const [employees, setEmployees] = useState<Employee[]>([]);
 
   const [formData, setFormData] = useState({
     name: "",
+    employeeId: "",
     reason: "",
     incidentNotes: "",
     status: "active" as BlacklistItem["status"],
@@ -78,6 +97,7 @@ export default function DoNotHire() {
 
   const [editFormData, setEditFormData] = useState({
     name: "",
+    employeeId: "",
     reason: "",
     incidentNotes: "",
     status: "active" as BlacklistItem["status"],
@@ -89,9 +109,56 @@ export default function DoNotHire() {
       try {
         setLoading(true);
         setApiError(null);
+        
+        // Fetch blacklist items
         const list = await listResource<BlacklistItem>("do-not-hire");
         if (!mounted) return;
         setItems(list);
+        
+        // Fetch employees from employees API
+        let allEmployees: Employee[] = [];
+        try {
+          const employeeList = await listResource<Employee>("employees");
+          if (mounted) {
+            allEmployees = employeeList.filter((e) => e.status === "active");
+          }
+        } catch (empErr) {
+          console.error("Failed to load employees:", empErr);
+        }
+        
+        // Fetch users with employee role from users API
+        try {
+          const userList = await listResource<User>("users");
+          if (mounted) {
+            const employeeUsers = userList
+              .filter((u) => u.role === "employee" && (u.status === "active" || u.status === "pending"))
+              .map((u) => ({
+                id: u.id,
+                name: u.name,
+                initials: u.name
+                  .split(" ")
+                  .map((n) => n[0])
+                  .slice(0, 2)
+                  .join("")
+                  .toUpperCase(),
+                email: u.email,
+                status: "active" as const,
+              }));
+            
+            // Merge both lists (remove duplicates by email)
+            employeeUsers.forEach((eu) => {
+              if (!allEmployees.some((e) => e.email === eu.email)) {
+                allEmployees.push(eu);
+              }
+            });
+          }
+        } catch (userErr) {
+          console.error("Failed to load users:", userErr);
+        }
+        
+        if (mounted) {
+          setEmployees(allEmployees);
+        }
       } catch (e) {
         if (!mounted) return;
         setApiError(e instanceof Error ? e.message : "Failed to load records");
@@ -120,20 +187,29 @@ export default function DoNotHire() {
     });
 
     const sorted = base.slice().sort((a, b) => {
-      if (sortBy === "name_asc") return a.name.localeCompare(b.name);
-      if (sortBy === "name_desc") return b.name.localeCompare(a.name);
-      if (sortBy === "status") return a.status.localeCompare(b.status);
-      if (sortBy === "date_asc") return a.addedAt.localeCompare(b.addedAt);
-      return b.addedAt.localeCompare(a.addedAt);
+      const aName = a.name || "";
+      const bName = b.name || "";
+      const aStatus = a.status || "";
+      const bStatus = b.status || "";
+      const aDate = a.addedAt || "";
+      const bDate = b.addedAt || "";
+      
+      if (sortBy === "name_asc") return aName.localeCompare(bName);
+      if (sortBy === "name_desc") return bName.localeCompare(aName);
+      if (sortBy === "status") return aStatus.localeCompare(bStatus);
+      if (sortBy === "date_asc") return aDate.localeCompare(bDate);
+      return bDate.localeCompare(aDate);
     });
     return sorted;
   }, [items, searchQuery, sortBy]);
 
   const addItem = async () => {
     if (!formData.name || !formData.reason) return;
+    const selectedEmployee = employees.find(e => e.id === formData.employeeId);
     const next: BlacklistItem = {
       id: `DNH-${Date.now().toString().slice(-6)}`,
       name: formData.name,
+      employeeId: formData.employeeId || undefined,
       reason: formData.reason,
       incidentNotes: formData.incidentNotes,
       status: formData.status,
@@ -144,7 +220,7 @@ export default function DoNotHire() {
       await createResource<BlacklistItem>("do-not-hire", next);
       await refresh();
       setAddOpen(false);
-      setFormData({ name: "", reason: "", incidentNotes: "", status: "active" });
+      setFormData({ name: "", employeeId: "", reason: "", incidentNotes: "", status: "active" });
     } catch (e) {
       setApiError(e instanceof Error ? e.message : "Failed to add record");
     }
@@ -159,6 +235,7 @@ export default function DoNotHire() {
     setSelected(i);
     setEditFormData({
       name: i.name,
+      employeeId: i.employeeId || "",
       reason: i.reason,
       incidentNotes: i.incidentNotes,
       status: i.status,
@@ -243,14 +320,27 @@ export default function DoNotHire() {
                 {/* Name & Reason - Stack on mobile, row on tablet+ */}
                 <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
                   <div className="flex-1 min-w-0">
-                    <label className="block text-xs sm:text-sm font-medium mb-1.5">Name *</label>
-                    <input
-                      value={formData.name}
-                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                      className="w-full rounded-md border px-3 py-2 text-sm sm:text-base"
-                      placeholder="John Doe"
+                    <label className="block text-xs sm:text-sm font-medium mb-1.5">Employee *</label>
+                    <select
+                      value={formData.employeeId}
+                      onChange={(e) => {
+                        const empId = e.target.value;
+                        const emp = employees.find((e) => e.id === empId);
+                        setFormData({ ...formData, employeeId: empId, name: emp?.name || "" });
+                      }}
+                      className="w-full rounded-md border px-3 py-2 text-sm sm:text-base bg-white"
                       required
-                    />
+                    >
+                      <option value="">Select employee</option>
+                      {employees.map((emp) => (
+                        <option key={emp.id} value={emp.id}>
+                          {emp.name}
+                        </option>
+                      ))}
+                    </select>
+                    {employees.length === 0 && (
+                      <p className="text-xs text-warning mt-1">No employees found.</p>
+                    )}
                   </div>
                   <div className="flex-1 min-w-0">
                     <label className="block text-xs sm:text-sm font-medium mb-1.5">Reason *</label>
@@ -616,16 +706,27 @@ export default function DoNotHire() {
           </DialogHeader>
           {selected && (
             <form className="space-y-4 sm:space-y-5">
-              {/* Name & Reason */}
+              {/* Employee & Reason */}
               <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
                 <div className="flex-1 min-w-0">
-                  <label className="block text-xs sm:text-sm font-medium mb-1.5">Name *</label>
-                  <input
-                    value={editFormData.name}
-                    onChange={(e) => setEditFormData({ ...editFormData, name: e.target.value })}
-                    className="w-full rounded-md border px-3 py-2 text-sm sm:text-base"
+                  <label className="block text-xs sm:text-sm font-medium mb-1.5">Employee *</label>
+                  <select
+                    value={editFormData.employeeId}
+                    onChange={(e) => {
+                      const empId = e.target.value;
+                      const emp = employees.find((e) => e.id === empId);
+                      setEditFormData({ ...editFormData, employeeId: empId, name: emp?.name || "" });
+                    }}
+                    className="w-full rounded-md border px-3 py-2 text-sm sm:text-base bg-white"
                     required
-                  />
+                  >
+                    <option value="">Select employee</option>
+                    {employees.map((emp) => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.name}
+                      </option>
+                    ))}
+                  </select>
                 </div>
                 <div className="flex-1 min-w-0">
                   <label className="block text-xs sm:text-sm font-medium mb-1.5">Reason *</label>
