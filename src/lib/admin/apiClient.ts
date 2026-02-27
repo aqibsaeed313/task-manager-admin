@@ -7,8 +7,7 @@ type ApiErrorBody = {
 };
 
 export function getApiBaseUrl() {
-  const envUrl = (import.meta as any).env?.VITE_API_URL as string | undefined;
-  return (envUrl || "http://localhost:5000").replace(/\/$/, "");
+  return "https://task-manager-backend-theta-ten.vercel.app";
 }
 
 async function parseJsonSafe(res: Response) {
