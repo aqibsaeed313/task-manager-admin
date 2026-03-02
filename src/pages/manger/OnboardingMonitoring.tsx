@@ -148,59 +148,61 @@ export default function OnboardingMonitoring() {
               : "Failed to load onboarding"}
           </div>
         ) : null}
-        <table className="data-table">
-          <thead>
-            <tr>
-              <th>Employee</th>
-              <th>Progress</th>
-              <th>Documents</th>
-              <th>Approval</th>
-              <th>Start Date</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.map((item, index) => (
-              <tr
-                key={item.id}
-                className="animate-fade-in"
-                style={{ animationDelay: `${index * 30}ms` }}
-              >
-                <td>
-                  <div>
-                    <p className="font-medium text-foreground">{item.employeeName}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{item.role}</p>
-                  </div>
-                </td>
-                <td>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs text-muted-foreground">
-                      <span>{item.progress}%</span>
-                      <span className={cn(item.progress === 100 ? "text-success" : "text-muted-foreground")}>
-                        {item.progress === 100 ? "Complete" : "In progress"}
-                      </span>
-                    </div>
-                    <Progress value={item.progress} />
-                  </div>
-                </td>
-                <td>
-                  <span className="text-sm text-muted-foreground">
-                    {item.documentsUploaded}/{item.documentsRequired}
-                  </span>
-                </td>
-                <td>
-                  <Badge variant="secondary" className={cn("capitalize", statusStyles[item.approvalStatus])}>
-                    {item.approvalStatus}
-                  </Badge>
-                </td>
-                <td>
-                  <span className="text-sm text-muted-foreground">
-                    {new Date(item.startDate).toLocaleDateString()}
-                  </span>
-                </td>
+        <div className="overflow-x-auto">
+          <table className="data-table w-full min-w-[800px]">
+            <thead>
+              <tr>
+                <th>Employee</th>
+                <th>Progress</th>
+                <th>Documents</th>
+                <th>Approval</th>
+                <th>Start Date</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {filtered.map((item, index) => (
+                <tr
+                  key={item.id}
+                  className="animate-fade-in"
+                  style={{ animationDelay: `${index * 30}ms` }}
+                >
+                  <td>
+                    <div>
+                      <p className="font-medium text-foreground">{item.employeeName}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">{item.role}</p>
+                    </div>
+                  </td>
+                  <td>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>{item.progress}%</span>
+                        <span className={cn(item.progress === 100 ? "text-success" : "text-muted-foreground")}>
+                          {item.progress === 100 ? "Complete" : "In progress"}
+                        </span>
+                      </div>
+                      <Progress value={item.progress} />
+                    </div>
+                  </td>
+                  <td>
+                    <span className="text-sm text-muted-foreground">
+                      {item.documentsUploaded}/{item.documentsRequired}
+                    </span>
+                  </td>
+                  <td>
+                    <Badge variant="secondary" className={cn("capitalize", statusStyles[item.approvalStatus])}>
+                      {item.approvalStatus}
+                    </Badge>
+                  </td>
+                  <td>
+                    <span className="text-sm text-muted-foreground">
+                      {new Date(item.startDate).toLocaleDateString()}
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );

@@ -25,7 +25,7 @@ export function AdminLayout({ children }: AdminLayoutProps) {
       {/* Main Content - Responsive margin */}
       <div
         className={cn(
-          "transition-all duration-300 ease-in-out",
+          "transition-all duration-300 ease-in-out pt-14 sm:pt-16",
           // Mobile: No margin, sidebar slides over
           "ml-0",
           // Tablet/Desktop: Margin based on sidebar state

@@ -360,91 +360,93 @@ export default function DoNotHire() {
             )}
           </motion.div>
         ) : (
-          <table className="data-table w-full">
-            <thead>
-              <tr>
-                <th className="px-4 py-3 text-left">Name</th>
-                <th className="px-4 py-3 text-left">Reason</th>
-                <th className="px-4 py-3 text-left">Contact</th>
-                <th className="px-4 py-3 text-left">Added</th>
-              </tr>
-            </thead>
-            <tbody>
-              <AnimatePresence mode="popLayout">
-                {filtered.map((e, index) => (
-                  <motion.tr
-                    key={e.id}
-                    custom={index}
-                    variants={rowVariants}
-                    initial="hidden"
-                    animate="visible"
-                    exit="exit"
-                    whileHover="hover"
-                    layout
-                    className="border-b border-border last:border-0 hover:bg-muted/50 transition-colors"
-                  >
-                    <td className="px-4 py-3">
-                      <div>
-                        <motion.p 
-                          className="font-medium text-foreground"
+          <div className="overflow-x-auto">
+            <table className="data-table w-full min-w-[720px]">
+              <thead>
+                <tr>
+                  <th className="px-4 py-3 text-left">Name</th>
+                  <th className="px-4 py-3 text-left">Reason</th>
+                  <th className="px-4 py-3 text-left">Contact</th>
+                  <th className="px-4 py-3 text-left">Added</th>
+                </tr>
+              </thead>
+              <tbody>
+                <AnimatePresence mode="popLayout">
+                  {filtered.map((e, index) => (
+                    <motion.tr
+                      key={e.id}
+                      custom={index}
+                      variants={rowVariants}
+                      initial="hidden"
+                      animate="visible"
+                      exit="exit"
+                      whileHover="hover"
+                      layout
+                      className="border-b border-border last:border-0 hover:bg-muted/50 transition-colors"
+                    >
+                      <td className="px-4 py-3">
+                        <div>
+                          <motion.p 
+                            className="font-medium text-foreground"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ delay: index * 0.05 + 0.1 }}
+                          >
+                            {e.fullName}
+                          </motion.p>
+                          <motion.p 
+                            className="text-xs text-muted-foreground mt-0.5 line-clamp-1"
+                            initial={{ opacity: 0 }}
+                            animate={{ opacity: 1 }}
+                            transition={{ delay: index * 0.05 + 0.15 }}
+                          >
+                            {e.incidentNotes}
+                          </motion.p>
+                        </div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <motion.span 
+                          className="text-sm text-foreground"
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
-                          transition={{ delay: index * 0.05 + 0.1 }}
+                          transition={{ delay: index * 0.05 + 0.2 }}
                         >
-                          {e.fullName}
-                        </motion.p>
-                        <motion.p 
-                          className="text-xs text-muted-foreground mt-0.5 line-clamp-1"
+                          {e.reason}
+                        </motion.span>
+                      </td>
+                      <td className="px-4 py-3">
+                        <motion.div 
+                          className="text-sm text-muted-foreground space-y-1"
                           initial={{ opacity: 0 }}
                           animate={{ opacity: 1 }}
-                          transition={{ delay: index * 0.05 + 0.15 }}
+                          transition={{ delay: index * 0.05 + 0.25 }}
                         >
-                          {e.incidentNotes}
-                        </motion.p>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <motion.span 
-                        className="text-sm text-foreground"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: index * 0.05 + 0.2 }}
-                      >
-                        {e.reason}
-                      </motion.span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <motion.div 
-                        className="text-sm text-muted-foreground space-y-1"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: index * 0.05 + 0.25 }}
-                      >
-                        <div className="flex items-center gap-1.5">
-                          <Phone className="w-3 h-3" />
-                          <span>{e.phone ?? "—"}</span>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <Mail className="w-3 h-3" />
-                          <span>{e.email ?? "—"}</span>
-                        </div>
-                      </motion.div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <motion.span 
-                        className="text-sm text-muted-foreground"
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: index * 0.05 + 0.3 }}
-                      >
-                        {new Date(e.createdAt).toLocaleDateString()}
-                      </motion.span>
-                    </td>
-                  </motion.tr>
-                ))}
-              </AnimatePresence>
-            </tbody>
-          </table>
+                          <div className="flex items-center gap-1.5">
+                            <Phone className="w-3 h-3" />
+                            <span>{e.phone ?? "—"}</span>
+                          </div>
+                          <div className="flex items-center gap-1.5">
+                            <Mail className="w-3 h-3" />
+                            <span>{e.email ?? "—"}</span>
+                          </div>
+                        </motion.div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <motion.span 
+                          className="text-sm text-muted-foreground whitespace-nowrap"
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ delay: index * 0.05 + 0.3 }}
+                        >
+                          {new Date(e.createdAt).toLocaleDateString()}
+                        </motion.span>
+                      </td>
+                    </motion.tr>
+                  ))}
+                </AnimatePresence>
+              </tbody>
+            </table>
+          </div>
         )}
       </motion.div>
 

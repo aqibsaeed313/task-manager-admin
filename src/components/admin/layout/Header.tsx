@@ -101,7 +101,7 @@ export function Header({ onMenuClick }: HeaderProps) {
   };
 
   return (
-    <header className="h-14 sm:h-16 bg-card border-b border-border flex items-center justify-between px-3 sm:px-4 md:px-6">
+    <header className="fixed top-0 inset-x-0 z-40 h-14 sm:h-16 bg-card border-b border-border flex items-center justify-between px-3 sm:px-4 md:px-6">
       
       {/* Left Section - Menu Button & Search */}
       <div className="flex items-center gap-2 flex-1 min-w-0">

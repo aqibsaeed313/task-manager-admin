@@ -14,10 +14,7 @@ import {
   MessageSquare,
   Settings,
   LogOut,
-  ChevronLeft,
-  Menu,
 } from "lucide-react";
-import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/manger/utils";
 import { clearAuthState } from "@/lib/auth";
@@ -26,7 +23,7 @@ import { apiFetch } from "@/lib/manger/api";
 import { getAuthState } from "@/lib/auth";
 
 const navItems = [
-  { icon: LayoutDashboard, label: "Dashboard", path: "/manager" },
+  { icon: LayoutDashboard, label: "Dashboard", path: "/manager", end: true },
   { icon: ClipboardList, label: "Tasks", path: "/manager/tasks" },
   { icon: Users, label: "Employees", path: "/manager/employees" },
   { icon: Calendar, label: "Scheduling", path: "/manager/scheduling" },
@@ -48,7 +45,6 @@ interface SidebarProps {
 }
 
 export function Sidebar({ mode = "desktop", onNavigate }: SidebarProps) {
-  const [collapsed, setCollapsed] = useState(false);
   const navigate = useNavigate();
 
   const settingsQuery = useQuery({
@@ -76,8 +72,10 @@ export function Sidebar({ mode = "desktop", onNavigate }: SidebarProps) {
     navigate("/login", { replace: true });
   };
 
+  const isMobile = mode === "mobile";
+
   const handleNavigate = () => {
-    if (mode === "mobile") {
+    if (isMobile) {
       onNavigate?.();
     }
   };
@@ -85,85 +83,94 @@ export function Sidebar({ mode = "desktop", onNavigate }: SidebarProps) {
   return (
     <aside
       className={cn(
-        mode === "mobile"
-          ? "h-full bg-sidebar flex flex-col w-64"
-          : "fixed left-0 top-0 h-screen bg-sidebar flex flex-col transition-all duration-300 z-50",
-        mode === "mobile" ? "w-64" : collapsed ? "w-16" : "w-64"
+        "flex flex-col text-white",
+        isMobile
+          ? "h-full w-64 bg-gradient-to-b from-[#0b2f6b] via-[#10428b] to-[#0a2a5c]"
+          : "fixed left-0 top-36 bottom-0 w-20 bg-gradient-to-b from-[#0b2f6b] via-[#10428b] to-[#0a2a5c] shadow-floating animate-slide-in"
       )}
     >
-      {/* Header */}
-      <div className="flex items-center justify-between h-16 px-4 border-b border-sidebar-border">
-        {!collapsed && (
-          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg gradient-primary flex items-center justify-center">
-              <ClipboardList className="w-4 h-4 text-white" />
-            </div>
-            <span className="font-semibold text-sidebar-foreground">TaskManager</span>
-          </div>
-        )}
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className={cn(
-            "p-2 rounded-lg hover:bg-sidebar-accent text-sidebar-muted hover:text-sidebar-foreground transition-colors",
-            mode === "mobile" && "hidden",
-          )}
-        >
-          {collapsed ? <Menu className="w-5 h-5" /> : <ChevronLeft className="w-5 h-5" />}
-        </button>
+      {/* Top icon */}
+      <div className="flex items-center justify-center h-20 border-b border-white/10">
+        <div className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 border border-white/40 shadow-md">
+          <ClipboardList className="h-5 w-5 text-[#ffdf70]" />
+        </div>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto overflow-x-hidden no-scrollbar">
+      {/* Navigation icons */}
+      <nav className="flex-1 flex flex-col items-center gap-2 py-4 overflow-y-auto no-scrollbar">
         {navItems.map((item) => (
           <NavLink
             key={item.path}
             to={item.path}
-            className={cn("nav-item nav-item-inactive", collapsed && "justify-center px-2")}
-            activeClassName="nav-item-active"
+            end={item.end}
+            className={cn(
+              "flex h-11 w-11 items-center justify-center rounded-full text-white/70 hover:bg-white/15 hover:text-white transition-colors",
+              isMobile && "h-10 w-full rounded-xl justify-start px-4 gap-3"
+            )}
+            activeClassName={cn(
+              "bg-white text-[#0b3f86] shadow-md",
+              isMobile && "bg-white/90"
+            )}
             onClick={handleNavigate}
           >
-            <item.icon className="w-5 h-5 flex-shrink-0" />
-            {!collapsed && <span>{item.label}</span>}
+            <item.icon className="h-5 w-5 flex-shrink-0" />
+            {isMobile && <span className="text-sm font-medium">{item.label}</span>}
           </NavLink>
         ))}
       </nav>
 
-      {/* Footer */}
-      <div className="p-3 border-t border-sidebar-border">
+      {/* Footer with settings / logout / user */}
+      <div className={cn(
+        "border-t border-white/10 px-3 pb-4 pt-3",
+        isMobile ? "space-y-3" : "space-y-2 flex flex-col items-center"
+      )}>
         <NavLink
           to="/manager/settings"
-          className={cn("nav-item nav-item-inactive", collapsed && "justify-center px-2")}
-          activeClassName="nav-item-active"
+          className={cn(
+            "flex items-center justify-center h-10 w-10 rounded-full text-white/70 hover:bg-white/15 hover:text-white transition-colors",
+            isMobile && "w-full rounded-xl justify-start px-4 gap-3"
+          )}
+          activeClassName={cn(
+            "bg-white text-[#0b3f86] shadow-md",
+            isMobile && "bg-white/90"
+          )}
           onClick={handleNavigate}
         >
-          <Settings className="w-5 h-5 flex-shrink-0" />
-          {!collapsed && <span>Settings</span>}
+          <Settings className="h-5 w-5 flex-shrink-0" />
+          {isMobile && <span className="text-sm font-medium">Settings</span>}
         </NavLink>
 
         <button
           type="button"
           onClick={onLogout}
           className={cn(
-            "nav-item nav-item-inactive w-full",
-            collapsed && "justify-center px-2",
+            "flex items-center justify-center h-10 w-10 rounded-full text-white/80 hover:bg-red-500/20 hover:text-red-100 transition-colors",
+            isMobile && "w-full rounded-xl justify-start px-4 gap-3"
           )}
         >
-          <LogOut className="w-5 h-5 flex-shrink-0" />
-          {!collapsed && <span>Logout</span>}
+          <LogOut className="h-5 w-5 flex-shrink-0" />
+          {isMobile && <span className="text-sm font-medium">Logout</span>}
         </button>
 
-        {!collapsed && (
-          <div className="mt-4 p-3 rounded-lg bg-sidebar-accent/50">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-full bg-primary flex items-center justify-center text-primary-foreground text-sm font-medium">
-                {initials || "U"}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-sidebar-foreground truncate">
-                  {fullName}
-                </p>
-                <p className="text-xs text-sidebar-muted truncate">{email || role || auth.username || ""}</p>
-              </div>
+        {!isMobile && (
+          <div className="mt-2 flex flex-col items-center gap-1 text-[11px] text-white/80">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-white/15 text-[11px] font-semibold">
+              {initials || "U"}
+            </div>
+            <span className="max-w-[4.5rem] truncate">{fullName}</span>
+          </div>
+        )}
+
+        {isMobile && (
+          <div className="mt-2 p-3 rounded-lg bg-white/10 flex items-center gap-3">
+            <div className="h-8 w-8 rounded-full bg-white/20 flex items-center justify-center text-xs font-semibold">
+              {initials || "U"}
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-medium truncate">{fullName}</p>
+              <p className="text-xs text-white/80 truncate">
+                {email || role || auth.username || ""}
+              </p>
             </div>
           </div>
         )}

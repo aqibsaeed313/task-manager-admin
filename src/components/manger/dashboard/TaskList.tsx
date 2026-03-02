@@ -95,11 +95,10 @@ export function TaskList() {
 
   return (
     <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
-      <div className="px-4 sm:px-6 py-4 border-b border-border flex items-start sm:items-center justify-between gap-3">
-        <h3 className="font-semibold text-foreground text-base sm:text-lg">Recent Tasks</h3>
-        <button className="text-sm text-primary hover:text-primary/80 font-medium whitespace-nowrap">
-          View All
-        </button>
+      <div className="px-4 sm:px-6 py-4 border-b border-border flex items-center justify-between gap-3 bg-slate-50">
+        <h3 className="font-semibold text-slate-900 text-base sm:text-lg">
+          Priority Tasks
+        </h3>
       </div>
       <div className="divide-y divide-border">
         {tasks.map((task, index) => (

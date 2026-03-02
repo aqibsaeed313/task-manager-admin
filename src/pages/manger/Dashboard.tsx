@@ -3,14 +3,10 @@ import { StatCard } from "@/components/manger/dashboard/StatCard";
 import { TaskList } from "@/components/manger/dashboard/TaskList";
 import { EmployeeActivity } from "@/components/manger/dashboard/EmployeeActivity";
 import { ScheduleOverview } from "@/components/manger/dashboard/ScheduleOverview";
-import {
-  ClipboardList,
-  Users,
-  Clock,
-  AlertCircle,
-} from "lucide-react";
+import { ClipboardList, Users, Clock, AlertCircle } from "lucide-react";
 import { apiFetch } from "@/lib/manger/api";
 import { useQuery } from "@tanstack/react-query";
+import { getAuthState } from "@/lib/auth";
 
 // Animation variants
 const containerVariants = {
@@ -129,157 +125,115 @@ export default function Dashboard() {
   });
 
   const summary = summaryQuery.data;
+  const auth = getAuthState();
+  const displayName = (auth.username || "Sarah").split(" ")[0];
 
   return (
     <motion.div
       initial="hidden"
       animate="visible"
       variants={containerVariants}
-      className="space-y-4 sm:space-y-6 lg:space-y-8 px-3 sm:px-4 lg:px-6 pb-6"
+      className="space-y-5 sm:space-y-6 lg:space-y-8"
     >
-      {/* Header */}
-      <motion.div variants={headerVariants} className="page-header">
-        <motion.h1 
-          className="page-title"
+      {/* Welcome + top cards container */}
+      <motion.div
+        variants={headerVariants}
+        className="rounded-2xl bg-white/90 shadow-floating border border-white/60 overflow-hidden"
+      >
+        <div className="px-4 sm:px-6 py-4 sm:py-5 border-b border-slate-200/70">
+          <h1 className="text-2xl sm:text-3xl font-semibold text-slate-900">
+            Welcome,{" "}
+            <span className="text-[#0b5ed7]">
+              {displayName}
+              !
+            </span>
+          </h1>
+        </div>
+
+        {/* Stat summary row */}
+        <motion.div
+          variants={statsGridVariants}
+          className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4 px-4 sm:px-6 py-4 sm:py-5"
+        >
+          <motion.div variants={statCardVariants} whileHover="hover">
+            <StatCard
+              title="Tasks Assigned"
+              value={summary ? summary.activeTasks : "—"}
+              subtitle={summary ? `${summary.dueToday} due today` : "Loading..."}
+              icon={ClipboardList}
+              variant="default"
+            />
+          </motion.div>
+
+          <motion.div variants={statCardVariants} whileHover="hover">
+            <StatCard
+              title="Shifts Today"
+              value={summary ? summary.employeesWorking : "—"}
+              subtitle={summary ? `Out of ${summary.employeeTotal} employees` : "Loading..."}
+              icon={Clock}
+              variant="default"
+            />
+          </motion.div>
+
+          <motion.div variants={statCardVariants} whileHover="hover">
+            <StatCard
+              title="Locations"
+              value={summary ? summary.employeeTotal : "—"}
+              subtitle="Active locations"
+              icon={Users}
+              variant="default"
+            />
+          </motion.div>
+
+          <motion.div variants={statCardVariants} whileHover="hover">
+            <StatCard
+              title="New Hires"
+              value={summary ? summary.overdueTasks : "—"}
+              subtitle="This week"
+              icon={AlertCircle}
+              variant="default"
+            />
+          </motion.div>
+        </motion.div>
+      </motion.div>
+
+      {/* Middle cards: Priority tasks + upcoming shifts */}
+      <motion.div
+        variants={contentVariants}
+        className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6"
+      >
+        <motion.div
+          className="lg:col-span-2"
           initial={{ opacity: 0, x: -20 }}
           animate={{ opacity: 1, x: 0 }}
-          transition={{ type: "spring", stiffness: 400, damping: 30 }}
-        >
-          Dashboard
-        </motion.h1>
-        <motion.p 
-          className="page-subtitle"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.1 }}
-        >
-          Welcome back, John! Here's what's happening today.
-        </motion.p>
-      </motion.div>
-
-      {/* Stats Grid */}
-      <motion.div 
-        variants={statsGridVariants}
-        className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4 lg:gap-6"
-      >
-        <motion.div variants={statCardVariants} whileHover="hover">
-          <StatCard
-            title="Active Tasks"
-            value={summary ? summary.activeTasks : "—"}
-            subtitle={summary ? `${summary.dueToday} due today` : "Loading..."}
-            icon={ClipboardList}
-            trend={{ value: 12, isPositive: true }}
-            variant="primary"
-          />
-        </motion.div>
-
-        <motion.div variants={statCardVariants} whileHover="hover">
-          <StatCard
-            title="Employees Working"
-            value={summary ? summary.employeesWorking : "—"}
-            subtitle={summary ? `Out of ${summary.employeeTotal} total` : "Loading..."}
-            icon={Users}
-            trend={{ value: 5, isPositive: true }}
-            variant="success"
-          />
-        </motion.div>
-
-        <motion.div variants={statCardVariants} whileHover="hover">
-          <StatCard
-            title="Hours Logged Today"
-            value={summary ? `${summary.hoursLoggedToday}h` : "—"}
-            subtitle={summary ? `Average ${summary.avgHoursPerEmployee}h per employee` : "Loading..."}
-            icon={Clock}
-            variant="default"
-          />
-        </motion.div>
-
-        <motion.div 
-          variants={statCardVariants} 
-          whileHover="hover"
-          animate={summary?.overdueTasks && summary.overdueTasks > 0 ? {
-            scale: [1, 1.02, 1],
-            transition: { 
-              duration: 2, 
-              repeat: Infinity,
-              repeatType: "reverse"
-            }
-          } : {}}
-        >
-          <StatCard
-            title="Overdue Tasks"
-            value={summary ? summary.overdueTasks : "—"}
-            subtitle={summary ? "Needs attention" : "Loading..."}
-            icon={AlertCircle}
-            variant="danger"
-          />
-        </motion.div>
-      </motion.div>
-
-      {/* Main Content Grid */}
-      <motion.div 
-        variants={contentVariants}
-        className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6"
-      >
-        <motion.div 
-          className="lg:col-span-2"
-          initial={{ opacity: 0, x: -30 }}
-          animate={{ opacity: 1, x: 0 }}
-          transition={{ 
-            type: "spring", 
-            stiffness: 300, 
+          transition={{
+            type: "spring",
+            stiffness: 300,
             damping: 30,
-            delay: 0.5 
+            delay: 0.35,
           }}
         >
           <TaskList />
         </motion.div>
-        
-        <motion.div 
-          className="space-y-4 sm:space-y-6"
-          initial={{ opacity: 0, x: 30 }}
+
+        <motion.div
+          initial={{ opacity: 0, x: 20 }}
           animate={{ opacity: 1, x: 0 }}
-          transition={{ 
-            type: "spring", 
-            stiffness: 300, 
+          transition={{
+            type: "spring",
+            stiffness: 300,
             damping: 30,
-            delay: 0.6 
+            delay: 0.4,
           }}
         >
-          <EmployeeActivity />
+          <ScheduleOverview />
         </motion.div>
       </motion.div>
 
-      {/* Schedule Overview */}
+      {/* Employee activity strip below */}
       <motion.div variants={scheduleVariants}>
-        <ScheduleOverview />
+        <EmployeeActivity />
       </motion.div>
-
-      {/* Floating animation for loading state */}
-      {summaryQuery.isLoading && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
-          className="fixed bottom-4 right-4 bg-primary text-primary-foreground px-4 py-2 rounded-full shadow-lg text-sm"
-        >
-          <motion.div
-            animate={{ 
-              scale: [1, 1.1, 1],
-              rotate: [0, 5, -5, 0]
-            }}
-            transition={{ 
-              duration: 1.5,
-              repeat: Infinity,
-              repeatType: "reverse"
-            }}
-            className="flex items-center gap-2"
-          >
-            <Clock className="w-4 h-4" />
-            <span>Updating dashboard...</span>
-          </motion.div>
-        </motion.div>
-      )}
     </motion.div>
   );
 }

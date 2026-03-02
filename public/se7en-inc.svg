@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="420" height="120" viewBox="0 0 420 120" role="img" aria-label="SE7EN Inc.">
+  <defs>
+    <linearGradient id="gold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFD56A"/>
+      <stop offset="0.55" stop-color="#E3B646"/>
+      <stop offset="1" stop-color="#B8841F"/>
+    </linearGradient>
+    <linearGradient id="stone" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#E9EDF2"/>
+      <stop offset="1" stop-color="#B8C2CC"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="160%">
+      <feDropShadow dx="0" dy="3" stdDeviation="3" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- pedestal -->
+  <g filter="url(#shadow)">
+    <rect x="18" y="16" width="180" height="18" rx="3" fill="url(#stone)"/>
+    <rect x="30" y="34" width="156" height="46" rx="4" fill="url(#stone)"/>
+    <rect x="18" y="80" width="180" height="18" rx="3" fill="url(#stone)"/>
+    <rect x="14" y="94" width="188" height="12" rx="3" fill="#9AA7B5"/>
+  </g>
+
+  <!-- text -->
+  <g transform="translate(210 64)" filter="url(#shadow)">
+    <text x="0" y="0" text-anchor="start" dominant-baseline="middle"
+      font-family="Georgia, 'Times New Roman', serif"
+      font-weight="700" font-size="58" letter-spacing="1"
+      fill="url(#gold)" stroke="#3A2B12" stroke-width="2">
+      SE7EN
+    </text>
+    <text x="238" y="6" text-anchor="start" dominant-baseline="middle"
+      font-family="Georgia, 'Times New Roman', serif"
+      font-weight="700" font-size="26"
+      fill="#E6E9EF" stroke="#223046" stroke-width="1.5">
+      INC.
+    </text>
+  </g>
+</svg>

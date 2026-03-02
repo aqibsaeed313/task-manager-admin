@@ -125,7 +125,7 @@ export function Sidebar({ collapsed, onToggle, open = false, onClose }: SidebarP
       {/* Sidebar */}
       <aside
         className={cn(
-          "fixed left-0 top-0 h-screen bg-sidebar flex flex-col transition-all duration-300 z-50",
+          "fixed left-0 top-14 sm:top-16 h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-4rem)] bg-sidebar flex flex-col transition-all duration-300 z-50",
           // Width - responsive: full width on mobile, normal width on desktop
           collapsed 
             ? "w-[72px] sm:w-20" 
