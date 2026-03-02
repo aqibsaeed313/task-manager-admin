@@ -64,8 +64,8 @@ export function Sidebar({ mode = "desktop", onNavigate }: SidebarProps) {
       className={cn(
         "flex flex-col text-white",
         isMobile
-          ? "h-full w-64 bg-gradient-to-b from-[#0b2f6b] via-[#10428b] to-[#0a2a5c]"
-          : "fixed left-0 top-36 bottom-0 w-20 bg-gradient-to-b from-[#0b2f6b] via-[#10428b] to-[#0a2a5c] shadow-floating animate-slide-in border-r-2 border-white/20"
+          ? "h-full w-64 bg-gradient-to-b from-[#133767] via-[#133767] to-[#133767]"
+          : "fixed left-0 top-36 bottom-0 w-20 bg-gradient-to-b from-[#133767] via-[#133767] to-[#133767] shadow-floating animate-slide-in border-r-2 border-white/20"
       )}
     >
       {/* Navigation icons */}
