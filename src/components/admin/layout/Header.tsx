@@ -91,22 +91,22 @@ export function Header({ onMenuClick }: HeaderProps) {
     <header className="fixed top-0 left-0 right-0 md:left-20 z-30 shadow-floating">
       <div className="w-full bg-gradient-to-r from-[#133767] via-[#133767] to-[#133767]">
         <div className="hidden md:block fixed top-0 left-0 h-36 w-20 bg-gradient-to-r from-[#133767] via-[#133767] to-[#133767]" />
-        <div className="relative flex h-36 items-center justify-between px-4 sm:px-6 lg:px-10 py-4 animate-fade-in">
-          <div className="flex items-center">
+        <div className="relative flex h-14 sm:h-20 md:h-36 items-center justify-between px-3 sm:px-6 lg:px-10 py-2 md:py-4 animate-fade-in">
+          <div className="flex items-center z-10">
             <img
               src="/seven logo.png"
               alt="SE7EN Inc. logo"
-              className="h-36 sm:h-40 min-w-[300px] w-auto drop-shadow-[0_4px_8px_rgba(0,0,0,0.4)]"
+              className="h-10 sm:h-12 md:h-36 w-auto max-w-[120px] sm:max-w-[160px] md:max-w-[300px] object-contain drop-shadow-[0_4px_8px_rgba(0,0,0,0.4)]"
             />
           </div>
 
-          <div className="absolute left-1/2 -translate-x-1/2 flex items-center">
+          <div className="flex absolute left-1/2 -translate-x-1/2 items-center">
             <div className="relative">
               <div className="absolute inset-0 -z-10 blur-2xl bg-blue-400/30 scale-110 rounded-full" />
               <img
                 src="/clock2.png"
                 alt="TaskManager by Reardon"
-                className="h-32 sm:h-36 md:h-40 w-auto max-w-[280px] sm:max-w-[340px] md:max-w-[380px] object-contain mix-blend-screen opacity-95 [mask-image:radial-gradient(closest-side,black_79%,transparent_100%)]"
+                className="h-8 sm:h-14 md:h-32 lg:h-40 w-auto max-w-[100px] sm:max-w-[160px] md:max-w-[280px] lg:max-w-[380px] object-contain mix-blend-screen opacity-95 [mask-image:radial-gradient(closest-side,black_79%,transparent_100%)]"
               />
             </div>
           </div>

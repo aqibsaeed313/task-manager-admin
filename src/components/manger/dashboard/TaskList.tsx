@@ -1,6 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/manger/utils";
-import { Clock, User, MoreHorizontal } from "lucide-react";
+import { Clock, User, MoreHorizontal, Check } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/manger/api";
 
@@ -81,6 +81,12 @@ const statusStyles = {
   completed: "bg-emerald-600 text-white border-emerald-600 font-semibold uppercase",
 };
 
+const statusIconColors = {
+  active: "bg-amber-500",
+  pending: "bg-red-600", 
+  completed: "bg-emerald-600",
+};
+
 export function TaskList() {
   const tasksQuery = useQuery({
     queryKey: ["dashboard", "recent-tasks"],
@@ -109,7 +115,10 @@ export function TaskList() {
           >
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
               <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-3 mb-2">
+                  <div className={cn("w-6 h-6 rounded-full flex items-center justify-center flex-shrink-0", statusIconColors[task.status])}>
+                    <Check className="w-4 h-4 text-white" />
+                  </div>
                   <h4 className="font-medium text-foreground truncate">
                     {task.title}
                   </h4>
