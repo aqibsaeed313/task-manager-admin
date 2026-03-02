@@ -16,13 +16,6 @@ export default function Dashboard() {
           trend={{ value: 0, isPositive: true }}
         />
         <StatCard
-          title="Active Employees"
-          value={0}
-          icon={Users}
-          subtitle=""
-          trend={{ value: 0, isPositive: true }}
-        />
-        <StatCard
           title="Locations"
           value={0}
           icon={MapPin}
@@ -43,7 +36,7 @@ export default function Dashboard() {
           <TaskList />
         </div>
         <div className="space-y-6">
-          <EmployeeActivity />
+          {/* EmployeeActivity removed */}
         </div>
       </div>
 

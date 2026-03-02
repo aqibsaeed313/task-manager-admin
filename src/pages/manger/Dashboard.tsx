@@ -229,11 +229,6 @@ export default function Dashboard() {
           <ScheduleOverview />
         </motion.div>
       </motion.div>
-
-      {/* Employee activity strip below */}
-      <motion.div variants={scheduleVariants}>
-        <EmployeeActivity />
-      </motion.div>
     </motion.div>
   );
 }

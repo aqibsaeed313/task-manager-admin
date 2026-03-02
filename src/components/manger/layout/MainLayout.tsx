@@ -102,17 +102,21 @@ export function MainLayout({ children }: MainLayoutProps) {
               <img
                 src="/seven logo.png"
                 alt="SE7EN Inc. logo"
-                className="h-36 sm:h-40 w-auto drop-shadow-[0_4px_8px_rgba(0,0,0,0.4)]"
+                className="h-36 sm:h-40 min-w-[300px] w-auto drop-shadow-[0_4px_8px_rgba(0,0,0,0.4)]"
               />
             </div>
 
-            {/* Center: Task Manager logo */}
+            {/* Center: Task Manager logo with blue glow */}
             <div className="absolute left-1/2 -translate-x-1/2 flex items-center">
-              <img
-                src="/logo.png"
-                alt="TaskManager by Reardon"
-                className="h-36 w-auto drop-shadow-[0_4px_10px_rgba(0,0,0,0.45)]"
-              />
+              <div className="relative">
+                {/* Blue glow effect behind logo */}
+                <div className="absolute inset-0 -z-10 blur-2xl bg-blue-400/30 scale-110 rounded-full" />
+                <img
+                  src="/logo.png"
+                  alt="TaskManager by Reardon"
+                  className="h-44 min-w-[400px] w-auto drop-shadow-[0_4px_10px_rgba(0,0,0,0.45)]"
+                />
+              </div>
             </div>
             <div className="flex items-center gap-2 sm:gap-3 text-white z-10">
               {/* Notifications dropdown */}
