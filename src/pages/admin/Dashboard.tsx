@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, type Variants } from "framer-motion";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { StatCard } from "@/components/admin/dashboard/StatCard";
 import { RecentTasksList } from "@/components/admin/dashboard/RecentTasksList";
@@ -35,7 +35,7 @@ type ScheduleItem = {
 };
 
 // Animation variants
-const containerVariants = {
+const containerVariants: Variants = {
   hidden: { opacity: 0 },
   visible: {
     opacity: 1,
@@ -46,26 +46,26 @@ const containerVariants = {
   },
 };
 
-const itemVariants = {
+const itemVariants: Variants = {
   hidden: { y: 20, opacity: 0 },
   visible: {
     y: 0,
     opacity: 1,
     transition: {
-      type: "spring",
+      type: "spring" as const,
       stiffness: 100,
       damping: 12,
     },
   },
 };
 
-const cardVariants = {
+const cardVariants: Variants = {
   hidden: { scale: 0.95, opacity: 0 },
   visible: {
     scale: 1,
     opacity: 1,
     transition: {
-      type: "spring",
+      type: "spring" as const,
       stiffness: 100,
       damping: 15,
     },
@@ -74,7 +74,7 @@ const cardVariants = {
     scale: 1.02,
     boxShadow: "0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)",
     transition: {
-      type: "spring",
+      type: "spring" as const,
       stiffness: 400,
       damping: 17,
     },
@@ -166,7 +166,7 @@ const Dashboard = () => {
   return (
     <AdminLayout>
       <motion.div 
-        className="space-y-4 sm:space-y-5 md:space-y-6 px-2 sm:px-0 pb-6"
+        className="space-y-4 sm:space-y-5 md:space-y-6"
         variants={containerVariants}
         initial="hidden"
         animate="visible"
@@ -283,14 +283,13 @@ const Dashboard = () => {
           )}
         </AnimatePresence>
 
-      </motion.div>
-
       {/* Add global styles for grid pattern */}
-      <style jsx global>{`
+      <style>{`
         .bg-grid-white {
           background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' width='32' height='32' fill='none' stroke='rgb(255 255 255 / 0.05)'%3e%3cpath d='M0 .5H31.5V32'/%3e%3c/svg%3e");
         }
       `}</style>
+      </motion.div>
     </AdminLayout>
   );
 };

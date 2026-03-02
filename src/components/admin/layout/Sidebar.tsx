@@ -1,6 +1,4 @@
-import { Link, useLocation, useNavigate } from "react-router-dom";
-import { cn } from "@/lib/utils";
-import { clearAuthState } from "@/lib/auth";
+import { NavLink } from "@/components/admin/NavLink";
 import {
   LayoutDashboard,
   Users,
@@ -11,29 +9,20 @@ import {
   MapPin,
   Calendar,
   Clock,
-  MessageSquare,
-  UserX,
   ClipboardList,
+  UserX,
   BarChart3,
-  ChevronLeft,
-  ChevronRight,
+  MessageSquare,
   Settings,
   LogOut,
-  Menu, // Added for mobile toggle
 } from "lucide-react";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { useQuery } from "@tanstack/react-query";
-import { apiFetch } from "@/lib/admin/apiClient";
 
-interface SidebarProps {
-  collapsed: boolean;
-  onToggle: () => void;
-  open?: boolean;
-  onClose?: () => void;
-}
+import { useNavigate } from "react-router-dom";
+import { cn } from "@/lib/utils";
+import { clearAuthState } from "@/lib/auth";
 
-const menuItems: { icon: any; label: string; path: string }[] = [
-  { icon: LayoutDashboard, label: "Dashboard", path: "/admin" },
+const navItems = [
+  { icon: LayoutDashboard, label: "Dashboard", path: "/admin", end: true },
   { icon: Users, label: "User Management", path: "/admin/users" },
   { icon: CheckSquare, label: "Task Management", path: "/admin/tasks" },
   { icon: UserCircle, label: "Employee Directory", path: "/admin/employees" },
@@ -46,179 +35,74 @@ const menuItems: { icon: any; label: string; path: string }[] = [
   { icon: UserX, label: "Do Not Hire", path: "/admin/do-not-hire" },
   { icon: ClipboardList, label: "Onboarding", path: "/admin/onboarding" },
   { icon: BarChart3, label: "Reports", path: "/admin/reports" },
-];
-
-const bottomItems: { icon: any; label: string; path: string }[] = [
   { icon: Settings, label: "Settings", path: "/admin/settings" },
 ];
 
-export function Sidebar({ collapsed, onToggle, open = false, onClose }: SidebarProps) {
-  const location = useLocation();
+type SidebarMode = "desktop" | "mobile";
+
+interface SidebarProps {
+  mode?: SidebarMode;
+  onNavigate?: () => void;
+}
+
+export function Sidebar({ mode = "desktop", onNavigate }: SidebarProps) {
   const navigate = useNavigate();
 
-  const settingsQuery = useQuery({
-    queryKey: ["settings"],
-    queryFn: async () => {
-      return apiFetch<{ item: { companyName?: string } }>("/api/settings");
-    },
-  });
+  const onLogout = () => {
+    clearAuthState();
+    onNavigate?.();
+    navigate("/login", { replace: true });
+  };
 
-  const brandName = String(settingsQuery.data?.item?.companyName || "").trim() || "Task Manager";
+  const isMobile = mode === "mobile";
 
-  const NavItem = ({ icon: Icon, label, path }: { icon: any; label: string; path: string }) => {
-    const isActive = location.pathname === path;
-    
-    const content = (
-      <Link
-        to={path}
-        onClick={() => {
-          if (onClose) onClose();
-        }}
-        className={cn(
-          "sidebar-item",
-          isActive && "sidebar-item-active",
-          // Responsive padding
-          collapsed ? "justify-center px-2 py-2.5 sm:px-3 sm:py-2.5" : "px-3 py-2.5 sm:px-4 sm:py-3"
-        )}
-      >
-        <Icon className={cn(
-          "flex-shrink-0",
-          collapsed ? "h-5 w-5 sm:h-5 sm:w-5" : "h-5 w-5 sm:h-5 sm:w-5"
-        )} />
-        {!collapsed && (
-          <span className="truncate text-sm sm:text-base ml-3">{label}</span>
-        )}
-      </Link>
-    );
-
-    if (collapsed) {
-      return (
-        <Tooltip delayDuration={0}>
-          <TooltipTrigger asChild>
-            {content}
-          </TooltipTrigger>
-          <TooltipContent 
-            side="right" 
-            className="bg-primary text-primary-foreground text-xs sm:text-sm"
-          >
-            {label}
-          </TooltipContent>
-        </Tooltip>
-      );
+  const handleNavigate = () => {
+    if (isMobile) {
+      onNavigate?.();
     }
-
-    return content;
   };
 
   return (
-    <>
-      {/* Mobile Overlay - Improved backdrop */}
-      {open && (
+    <aside
+      className={cn(
+        "flex flex-col text-white",
+        isMobile
+          ? "h-full w-64 bg-gradient-to-b from-[#0b2f6b] via-[#10428b] to-[#0a2a5c]"
+          : "fixed left-0 top-36 bottom-0 w-20 bg-gradient-to-b from-[#0b2f6b] via-[#10428b] to-[#0a2a5c] shadow-floating animate-slide-in border-r-2 border-white/20"
+      )}
+    >
+      <nav className="flex-1 flex flex-col items-center gap-5 py-4 overflow-y-auto overflow-x-hidden no-scrollbar mt-4">
+        {navItems.map((item) => (
+          <NavLink
+            key={item.path}
+            to={item.path}
+            end={item.end}
+            className={cn(
+              "flex h-12 w-12 items-center justify-center rounded-full text-white/70 hover:bg-white/15 hover:text-white transition-colors",
+              isMobile && "h-10 w-full rounded-xl justify-start px-4 gap-3"
+            )}
+            activeClassName={cn("bg-white text-[#0b3f86] shadow-md", isMobile && "bg-white/90")}
+            onClick={handleNavigate}
+          >
+            <item.icon className="h-6 w-6 flex-shrink-0" />
+            {isMobile && <span className="text-sm font-medium">{item.label}</span>}
+          </NavLink>
+        ))}
+      </nav>
+
+      <div className={cn("border-t border-white/10 px-3 pb-4 pt-3", isMobile ? "" : "flex flex-col items-center")}>
         <button
           type="button"
-          aria-label="Close sidebar"
-          onClick={() => onClose?.()}
-          className="fixed inset-0 bg-background/80 backdrop-blur-sm z-40 md:hidden transition-all duration-300 animate-in fade-in"
-        />
-      )}
-
-      {/* Sidebar */}
-      <aside
-        className={cn(
-          "fixed left-0 top-14 sm:top-16 h-[calc(100vh-3.5rem)] sm:h-[calc(100vh-4rem)] bg-sidebar flex flex-col transition-all duration-300 z-50",
-          // Width - responsive: full width on mobile, normal width on desktop
-          collapsed 
-            ? "w-[72px] sm:w-20" 
-            : "w-[85vw] sm:w-72 md:w-64",
-          // Mobile positioning
-          "-translate-x-full md:translate-x-0",
-          open && "translate-x-0",
-          // Shadow for mobile
-          "shadow-xl md:shadow-none"
-        )}
-      >
-        {/* Logo Section - Responsive */}
-        <div className={cn(
-          "h-14 sm:h-16 flex items-center px-3 sm:px-4 border-b border-sidebar-border",
-          collapsed ? "justify-center" : "justify-between"
-        )}>
-          {!collapsed && (
-            <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-              <div className="h-8 w-8 sm:h-9 sm:w-9 rounded-lg bg-sidebar-primary flex items-center justify-center flex-shrink-0">
-                <CheckSquare className="h-4 w-4 sm:h-5 sm:w-5 text-sidebar-primary-foreground" />
-              </div>
-              <span className="font-semibold text-sm sm:text-base text-sidebar-foreground truncate">
-                {brandName}
-              </span>
-            </div>
+          onClick={onLogout}
+          className={cn(
+            "flex items-center justify-center h-10 w-10 rounded-full text-white/80 hover:bg-red-500/20 hover:text-red-100 transition-colors",
+            isMobile && "w-full rounded-xl justify-start px-4 gap-3"
           )}
-          
-          {/* Toggle Button - Hidden on mobile when collapsed? No, always show */}
-          <button
-            onClick={onToggle}
-            className={cn(
-              "h-7 w-7 sm:h-8 sm:w-8 rounded-lg bg-sidebar-accent flex items-center justify-center",
-              "text-sidebar-foreground hover:bg-sidebar-primary hover:text-sidebar-primary-foreground",
-              "transition-colors flex-shrink-0",
-              collapsed && "ml-0"
-            )}
-            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          >
-            {collapsed ? (
-              <ChevronRight className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-            ) : (
-              <ChevronLeft className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
-            )}
-          </button>
-        </div>
-
-        {/* Main Navigation - Responsive scroll */}
-        <nav className="flex-1 p-2 sm:p-3 space-y-0.5 sm:space-y-1 overflow-y-auto overflow-x-hidden no-scrollbar">
-          {menuItems.map((item) => (
-            <NavItem key={item.path} icon={item.icon} label={item.label} path={item.path} />
-          ))}
-        </nav>
-
-        {/* Bottom Navigation - Responsive */}
-        <div className={cn(
-          "p-2 sm:p-3 space-y-0.5 sm:space-y-1 border-t border-sidebar-border",
-          collapsed ? "items-center" : ""
-        )}>
-          {bottomItems.map((item) => (
-            <NavItem key={item.path} icon={item.icon} label={item.label} path={item.path} />
-          ))}
-          
-          {/* Logout Button */}
-          <button
-            onClick={() => {
-              clearAuthState();
-              navigate("/login", { replace: true });
-            }}
-            className={cn(
-              "sidebar-item w-full text-destructive hover:bg-destructive/10 hover:text-destructive",
-              "transition-colors duration-200",
-              collapsed ? "justify-center px-2 py-2.5 sm:px-3 sm:py-2.5" : "px-3 py-2.5 sm:px-4 sm:py-3"
-            )}
-          >
-            <LogOut className={cn(
-              "h-5 w-5 sm:h-5 sm:w-5 flex-shrink-0",
-              collapsed ? "" : "mr-3"
-            )} />
-            {!collapsed && <span className="text-sm sm:text-base">Logout</span>}
-          </button>
-        </div>
-      </aside>
-
-      {/* Mobile Header Toggle - Only visible on mobile when sidebar is closed */}
-      {!open && !collapsed && (
-        <button
-          onClick={onToggle}
-          className="fixed top-3 left-3 z-30 md:hidden h-9 w-9 rounded-lg bg-accent flex items-center justify-center text-accent-foreground shadow-md"
-          aria-label="Open sidebar"
         >
-          <Menu className="h-5 w-5" />
+          <LogOut className="h-5 w-5 flex-shrink-0" />
+          {isMobile && <span className="text-sm font-medium">Logout</span>}
         </button>
-      )}
-    </>
+      </div>
+    </aside>
   );
 }
