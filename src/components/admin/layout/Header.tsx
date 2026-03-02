@@ -89,8 +89,8 @@ export function Header({ onMenuClick }: HeaderProps) {
 
   return (
     <header className="fixed top-0 left-0 right-0 md:left-20 z-30 shadow-floating">
-      <div className="w-full bg-gradient-to-r from-[#061a3a] via-[#061a3a] to-[#061a3a]">
-        <div className="hidden md:block fixed top-0 left-0 h-36 w-20 bg-gradient-to-r from-[#061a3a] via-[#061a3a] to-[#061a3a]" />
+      <div className="w-full bg-gradient-to-r from-[#142B4B] via-[#142B4B] to-[#142B4B]">
+        <div className="hidden md:block fixed top-0 left-0 h-36 w-20 bg-gradient-to-r from-[#142B4B] via-[#142B4B] to-[#142B4B]" />
         <div className="relative flex h-36 items-center justify-between px-4 sm:px-6 lg:px-10 py-4 animate-fade-in">
           <div className="flex items-center">
             <img
@@ -104,9 +104,9 @@ export function Header({ onMenuClick }: HeaderProps) {
             <div className="relative">
               <div className="absolute inset-0 -z-10 blur-2xl bg-blue-400/30 scale-110 rounded-full" />
               <img
-                src="/logo.png"
+                src="/clock2.png"
                 alt="TaskManager by Reardon"
-                className="h-44 min-w-[400px] w-auto drop-shadow-[0_4px_10px_rgba(0,0,0,0.45)]"
+                className="h-28 sm:h-32 md:h-36 w-auto max-w-[280px] sm:max-w-[340px] md:max-w-[380px] object-contain drop-shadow-[0_4px_10px_rgba(0,0,0,0.45)]"
               />
             </div>
           </div>
