@@ -93,29 +93,28 @@ export function MainLayout({ children }: MainLayoutProps) {
 
   return (
     <div className="min-h-screen bg-[#e6f0ff]">
-      {/* Top blue header with branding - starts after sidebar */}
-      <header className="fixed top-0 left-20 right-0 z-30 shadow-floating">
+      {/* Top blue header with branding */}
+      <header className="fixed top-0 left-0 md:left-20 right-0 z-30 shadow-floating">
         <div className="w-full bg-gradient-to-r from-[#061a3a] via-[#061a3a] to-[#061a3a]">
           <div className="hidden md:block fixed top-0 left-0 h-36 w-20 bg-gradient-to-r from-[#061a3a] via-[#061a3a] to-[#061a3a]" />
-          <div className="relative flex h-36 items-center justify-between px-4 sm:px-6 lg:px-10 py-4 animate-fade-in">
-            {/* Left side: Seven logo */}
-            <div className="flex items-center">
+          <div className="relative flex h-14 sm:h-20 md:h-36 items-center justify-between px-3 sm:px-6 lg:px-10 py-2 md:py-4 animate-fade-in">
+            {/* Left side: Seven logo - responsive */}
+            <div className="flex items-center z-10">
               <img
                 src="/seven logo.png"
                 alt="SE7EN Inc. logo"
-                className="h-36 sm:h-40 min-w-[300px] w-auto drop-shadow-[0_4px_8px_rgba(0,0,0,0.4)]"
+                className="h-8 sm:h-10 md:h-36 w-auto max-w-[100px] sm:max-w-[140px] md:max-w-[300px] object-contain drop-shadow-[0_4px_8px_rgba(0,0,0,0.4)]"
               />
             </div>
 
-            {/* Center: Task Manager logo with blue glow */}
-            <div className="absolute left-1/2 -translate-x-1/2 flex items-center">
+            {/* Center: Task Manager logo - admin style */}
+            <div className="flex absolute left-1/2 -translate-x-1/2 items-center">
               <div className="relative">
-                {/* Blue glow effect behind logo */}
                 <div className="absolute inset-0 -z-10 blur-2xl bg-blue-400/30 scale-110 rounded-full" />
                 <img
-                  src="/logo.png"
+                  src="/clock2.png"
                   alt="TaskManager by Reardon"
-                  className="h-44 min-w-[350px] w-auto drop-shadow-[0_4px_10px_rgba(0,0,0,0.45)]"
+                  className="h-12 sm:h-20 md:h-36 w-auto max-w-[140px] sm:max-w-[200px] md:max-w-[340px] object-contain mix-blend-screen opacity-95 [mask-image:radial-gradient(closest-side,black_79%,transparent_100%)]"
                 />
               </div>
             </div>
@@ -252,7 +251,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         <div className="hidden md:block">
           <Sidebar />
         </div>
-        <main className="flex-1 min-h-screen md:ml-20 pt-36">
+        <main className="flex-1 min-h-screen md:ml-20 pt-20 md:pt-36">
           <div className="w-full pl-2 pr-2 py-6 sm:py-8 animate-fade-in">
             {children}
           </div>
