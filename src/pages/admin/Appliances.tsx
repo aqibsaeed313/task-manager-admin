@@ -403,7 +403,7 @@ export default function Appliances() {
                 </h1>
               </div>
               <p className="text-xs sm:text-sm md:text-base text-muted-foreground max-w-3xl">
-                Track appliances, warranties, and assignments by location with beautiful animations.
+                Track appliances, warranties, and assignments by location.
               </p>
             </div>
 
