@@ -71,6 +71,8 @@ interface Vehicle {
   nextInspection: string;
   fuelLevel: number;
   mileage: number;
+  tagPhotoFileName?: string;
+  tagPhotoDataUrl?: string;
 }
 
 type VehicleApi = Omit<Vehicle, "id"> & {
@@ -89,8 +91,22 @@ function normalizeVehicle(v: VehicleApi): Vehicle {
     nextInspection: v.nextInspection,
     fuelLevel: v.fuelLevel,
     mileage: v.mileage,
+    tagPhotoFileName: v.tagPhotoFileName,
+    tagPhotoDataUrl: v.tagPhotoDataUrl,
   };
 }
+
+const getVehicleTagPhotoSrc = (v?: Partial<Vehicle> | null) => {
+  if (!v) return null;
+  const dataUrl = String(v.tagPhotoDataUrl || "").trim();
+  if (dataUrl) return dataUrl;
+  const fileName = String(v.tagPhotoFileName || "").trim();
+  if (!fileName) return null;
+  if (fileName.startsWith("data:")) return fileName;
+  if (fileName.startsWith("http://") || fileName.startsWith("https://")) return fileName;
+  if (fileName.startsWith("/")) return fileName;
+  return null;
+};
 
 const statusStyles = {
   available: "bg-success/10 text-success",
@@ -509,6 +525,20 @@ export default function Vehicles() {
 
           {selectedVehicle && (
             <div className="space-y-4">
+              {/* Vehicle Photo */}
+              {(() => {
+                const photoSrc = getVehicleTagPhotoSrc(selectedVehicle);
+                return photoSrc ? (
+                  <div className="flex justify-center">
+                    <img 
+                      src={photoSrc} 
+                      alt={selectedVehicle.name}
+                      className="h-24 w-24 object-cover rounded-xl border-2 ring-2 ring-primary/20 shadow-lg"
+                    />
+                  </div>
+                ) : null;
+              })()}
+
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
                   <Car className="w-6 h-6" />
@@ -834,9 +864,16 @@ export default function Vehicles() {
           >
             <div className="flex items-start justify-between mb-4">
               <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                  <Car className="w-6 h-6" />
-                </div>
+                {(() => {
+                  const photoSrc = getVehicleTagPhotoSrc(vehicle);
+                  return photoSrc ? (
+                    <img src={photoSrc} alt={vehicle.name} className="w-12 h-12 rounded-xl object-cover ring-2 ring-primary/20" />
+                  ) : (
+                    <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
+                      <Car className="w-6 h-6" />
+                    </div>
+                  );
+                })()}
                 <div>
                   <h3 className="font-semibold text-foreground">{vehicle.name}</h3>
                   <p className="text-sm text-muted-foreground">{vehicle.licensePlate}</p>

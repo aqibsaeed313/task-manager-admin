@@ -111,7 +111,7 @@ const containerVariants = {
       delayChildren: 0.2,
     },
   },
-};
+} as const;
 
 const itemVariants = {
   hidden: { y: 20, opacity: 0 },
@@ -119,7 +119,7 @@ const itemVariants = {
     y: 0,
     opacity: 1,
     transition: {
-      type: "spring",
+      type: "spring" as const,
       stiffness: 100,
       damping: 12,
     },
@@ -132,7 +132,7 @@ const cardVariants = {
     scale: 1,
     opacity: 1,
     transition: {
-      type: "spring",
+      type: "spring" as const,
       stiffness: 100,
       damping: 15,
     },
@@ -141,7 +141,7 @@ const cardVariants = {
     scale: 1.02,
     boxShadow: "0 20px 25px -5px rgba(59, 130, 246, 0.1), 0 10px 10px -5px rgba(59, 130, 246, 0.04)",
     transition: {
-      type: "spring",
+      type: "spring" as const,
       stiffness: 400,
       damping: 17,
     },
@@ -493,7 +493,7 @@ const Vehicles = () => {
           className="relative overflow-hidden rounded-xl bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-4 sm:p-6"
           variants={itemVariants}
           whileHover={{ scale: 1.01 }}
-          transition={{ type: "spring", stiffness: 300, damping: 20 }}
+          transition={{ type: "spring" as const, stiffness: 300, damping: 20 }}
         >
           <div className="absolute inset-0 bg-grid-white/10 [mask-image:radial-gradient(ellipse_at_center,white,transparent)]" />
           <div className="relative flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 sm:gap-6">
@@ -553,7 +553,7 @@ const Vehicles = () => {
                         initial={{ opacity: 0, y: -20, height: 0 }}
                         animate={{ opacity: 1, y: 0, height: "auto" }}
                         exit={{ opacity: 0, y: -20, height: 0 }}
-                        transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                        transition={{ type: "spring" as const, stiffness: 500, damping: 30 }}
                         className="rounded-lg bg-destructive/10 p-3 sm:p-4 border border-destructive/20"
                       >
                         <p className="text-xs sm:text-sm text-destructive flex items-center gap-2">
@@ -832,7 +832,7 @@ const Vehicles = () => {
                     <motion.div 
                       className={`h-10 w-10 sm:h-12 sm:w-12 rounded-lg bg-${item.color}/10 flex items-center justify-center flex-shrink-0`}
                       whileHover={{ rotate: 10 }}
-                      transition={{ type: "spring", stiffness: 300, damping: 10 }}
+                      transition={{ type: "spring" as const, stiffness: 300, damping: 10 }}
                     >
                       <item.icon className={`h-5 w-5 sm:h-6 sm:w-6 text-${item.color}`} />
                     </motion.div>
@@ -914,7 +914,7 @@ const Vehicles = () => {
                             <div className="flex items-center gap-3 flex-1 min-w-0">
                               <motion.div
                                 whileHover={{ scale: 1.1, rotate: 5 }}
-                                transition={{ type: "spring", stiffness: 300, damping: 10 }}
+                                transition={{ type: "spring" as const, stiffness: 300, damping: 10 }}
                               >
                                 {(() => {
                                   const photoSrc = getVehicleTagPhotoSrc(vehicle);
@@ -1111,7 +1111,7 @@ const Vehicles = () => {
                                 <div className="flex items-center gap-3">
                                   <motion.div
                                     whileHover={{ scale: 1.1, rotate: 5 }}
-                                    transition={{ type: "spring", stiffness: 300, damping: 10 }}
+                                    transition={{ type: "spring" as const, stiffness: 300, damping: 10 }}
                                   >
                                     {(() => {
                                       const photoSrc = getVehicleTagPhotoSrc(vehicle);
