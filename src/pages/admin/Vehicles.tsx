@@ -37,17 +37,15 @@ import {
   Trash2,
   Car,
   Calendar,
-  Shield,
-  FileText,
   Gauge,
   AlertCircle,
   User,
-  Sparkles,
   AlertTriangle,
   Wrench,
   Clock,
+  Camera,
 } from "lucide-react";
-import { createResource, deleteResource, listResource, updateResource, apiFetch } from "@/lib/admin/apiClient";
+import { createResource, deleteResource, listResource, updateResource } from "@/lib/admin/apiClient";
 
 interface Vehicle {
   id: string;
@@ -61,8 +59,8 @@ interface Vehicle {
   lastInspection: string;
   nextInspection: string;
   assignedTo: string;
-  registrationFileName?: string;
-  insuranceFileName?: string;
+  tagPhotoFileName?: string;
+  tagPhotoDataUrl?: string;
 }
 
 interface Employee {
@@ -173,27 +171,33 @@ const Vehicles = () => {
     lastInspection: "",
     nextInspection: "",
     assignedTo: "",
-    registrationFileName: "",
-    insuranceFileName: "",
+    tagPhotoFileName: "",
+    tagPhotoDataUrl: "",
   });
 
-  const [registrationFile, setRegistrationFile] = useState<File | null>(null);
-  const [insuranceFile, setInsuranceFile] = useState<File | null>(null);
+  const [tagPhotoFile, setTagPhotoFile] = useState<File | null>(null);
+  const [editTagPhotoFile, setEditTagPhotoFile] = useState<File | null>(null);
 
-  const [editFormData, setEditFormData] = useState({
-    make: "",
-    model: "",
-    year: "",
-    licensePlate: "",
-    vin: "",
-    mileage: "",
-    status: "active" as Vehicle["status"],
-    lastInspection: "",
-    nextInspection: "",
-    assignedTo: "",
-    registrationFileName: "",
-    insuranceFileName: "",
-  });
+  const readFileAsDataUrl = (file: File) => {
+    return new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.readAsDataURL(file);
+    });
+  };
+
+  const getVehicleTagPhotoSrc = (v?: Partial<Vehicle> | null) => {
+    if (!v) return null;
+    const dataUrl = String(v.tagPhotoDataUrl || "").trim();
+    if (dataUrl) return dataUrl;
+    const fileName = String(v.tagPhotoFileName || "").trim();
+    if (!fileName) return null;
+    if (fileName.startsWith("data:")) return fileName;
+    if (fileName.startsWith("http://") || fileName.startsWith("https://")) return fileName;
+    if (fileName.startsWith("/")) return fileName;
+    return null;
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -286,6 +290,16 @@ const Vehicles = () => {
     setFormError(null);
     try {
       setApiError(null);
+
+      let tagPhotoDataUrl = String(formData.tagPhotoDataUrl || "").trim();
+      if (!tagPhotoDataUrl && tagPhotoFile) {
+        try {
+          tagPhotoDataUrl = await readFileAsDataUrl(tagPhotoFile);
+        } catch {
+          tagPhotoDataUrl = "";
+        }
+      }
+
       const newVehicle: Vehicle = {
         id: `VH-${Date.now().toString().slice(-6)}`,
         make: formData.make,
@@ -298,31 +312,10 @@ const Vehicles = () => {
         lastInspection: formData.lastInspection,
         nextInspection: formData.nextInspection,
         assignedTo: formData.assignedTo || "-",
-        registrationFileName: formData.registrationFileName || "",
-        insuranceFileName: formData.insuranceFileName || "",
+        tagPhotoFileName: formData.tagPhotoFileName || "",
+        tagPhotoDataUrl,
       };
-      if (registrationFile || insuranceFile) {
-        const fd = new FormData();
-        fd.append("make", formData.make);
-        fd.append("model", formData.model);
-        fd.append("year", formData.year);
-        fd.append("licensePlate", formData.licensePlate);
-        fd.append("vin", formData.vin);
-        fd.append("mileage", formData.mileage);
-        fd.append("status", formData.status);
-        fd.append("lastInspection", formData.lastInspection);
-        fd.append("nextInspection", formData.nextInspection);
-        fd.append("assignedTo", formData.assignedTo || "-");
-        if (registrationFile) fd.append("registrationFile", registrationFile);
-        if (insuranceFile) fd.append("insuranceFile", insuranceFile);
-
-        await apiFetch<{ item: Vehicle }>("/api/vehicles/upload", {
-          method: "POST",
-          body: fd,
-        });
-      } else {
-        await createResource<Vehicle>("vehicles", newVehicle);
-      }
+      await createResource<Vehicle>("vehicles", newVehicle);
       await refreshVehicles();
       setAddVehicleOpen(false);
       setFormError(null);
@@ -337,11 +330,10 @@ const Vehicles = () => {
         lastInspection: "",
         nextInspection: "",
         assignedTo: "",
-        registrationFileName: "",
-        insuranceFileName: "",
+        tagPhotoFileName: "",
+        tagPhotoDataUrl: "",
       });
-      setRegistrationFile(null);
-      setInsuranceFile(null);
+      setTagPhotoFile(null);
     } catch (e) {
       setApiError(e instanceof Error ? e.message : "Failed to add vehicle");
     }
@@ -354,6 +346,7 @@ const Vehicles = () => {
 
   const handleEditVehicle = (vehicle: Vehicle) => {
     setSelectedVehicle(vehicle);
+    setEditTagPhotoFile(null);
     setEditFormData({
       make: vehicle.make,
       model: vehicle.model,
@@ -365,11 +358,26 @@ const Vehicles = () => {
       lastInspection: vehicle.lastInspection,
       nextInspection: vehicle.nextInspection,
       assignedTo: vehicle.assignedTo,
-      registrationFileName: vehicle.registrationFileName || "",
-      insuranceFileName: vehicle.insuranceFileName || "",
+      tagPhotoFileName: vehicle.tagPhotoFileName || "",
+      tagPhotoDataUrl: vehicle.tagPhotoDataUrl || "",
     });
     setEditVehicleOpen(true);
   };
+
+  const [editFormData, setEditFormData] = useState({
+    make: "",
+    model: "",
+    year: "",
+    licensePlate: "",
+    vin: "",
+    mileage: "",
+    status: "active" as Vehicle["status"],
+    lastInspection: "",
+    nextInspection: "",
+    assignedTo: "",
+    tagPhotoFileName: "",
+    tagPhotoDataUrl: "",
+  });
 
   const [editFormError, setEditFormError] = useState<string | null>(null);
 
@@ -388,6 +396,10 @@ const Vehicles = () => {
     setEditFormError(null);
     try {
       setApiError(null);
+      let tagPhotoDataUrl = String(editFormData.tagPhotoDataUrl || "").trim();
+      if (editTagPhotoFile) {
+        try { tagPhotoDataUrl = await readFileAsDataUrl(editTagPhotoFile); } catch { tagPhotoDataUrl = ""; }
+      }
       await updateResource<Vehicle>("vehicles", selectedVehicle.id, {
         ...selectedVehicle,
         make: editFormData.make,
@@ -400,13 +412,14 @@ const Vehicles = () => {
         lastInspection: editFormData.lastInspection,
         nextInspection: editFormData.nextInspection,
         assignedTo: editFormData.assignedTo || "-",
-        registrationFileName: editFormData.registrationFileName || "",
-        insuranceFileName: editFormData.insuranceFileName || "",
+        tagPhotoFileName: editFormData.tagPhotoFileName || "",
+        tagPhotoDataUrl,
       });
       await refreshVehicles();
       setEditVehicleOpen(false);
       setSelectedVehicle(null);
       setEditFormError(null);
+      setEditTagPhotoFile(null);
     } catch (e) {
       setApiError(e instanceof Error ? e.message : "Failed to update vehicle");
     }
@@ -681,32 +694,30 @@ const Vehicles = () => {
                     </div>
                   </div>
 
-                  {/* Document File Uploads */}
-                  <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+                  {/* Vehicle Photo Upload */}
+                  <div className="flex flex-col gap-3">
                     <div className="flex-1 min-w-0">
-                      <label className="block text-xs sm:text-sm font-medium mb-1.5">Registration Document</label>
+                      <label className="block text-xs sm:text-sm font-medium mb-1.5">Vehicle Photo</label>
                       <motion.div
                         className="w-full rounded-lg border px-3 py-3 text-sm sm:text-base bg-gradient-to-br from-muted/20 to-muted/5 hover:from-muted/30 hover:to-muted/10 transition-all cursor-pointer"
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                        }}
+                        onDragOver={(e) => { e.preventDefault(); }}
                         onDrop={(e) => {
                           e.preventDefault();
                           const f = e.dataTransfer.files?.[0];
                           if (f) {
-                            setRegistrationFile(f);
-                            setFormData({ ...formData, registrationFileName: f.name });
+                            setTagPhotoFile(f);
+                            void readFileAsDataUrl(f).then((url) => setFormData((p) => ({ ...p, tagPhotoFileName: f.name, tagPhotoDataUrl: url })));
                           }
                         }}
                         onClick={() => {
-                          const el = document.getElementById("vehicle-reg-input") as HTMLInputElement | null;
+                          const el = document.getElementById("vehicle-photo-input") as HTMLInputElement | null;
                           el?.click();
                         }}
                         role="button"
                         tabIndex={0}
                         onKeyDown={(e) => {
                           if (e.key === "Enter" || e.key === " ") {
-                            const el = document.getElementById("vehicle-reg-input") as HTMLInputElement | null;
+                            const el = document.getElementById("vehicle-photo-input") as HTMLInputElement | null;
                             el?.click();
                           }
                         }}
@@ -716,79 +727,32 @@ const Vehicles = () => {
                         <div className="flex items-center justify-between gap-3">
                           <div className="min-w-0">
                             <p className="text-xs sm:text-sm font-medium truncate">
-                              {registrationFile ? registrationFile.name : "Click to choose or drag & drop"}
+                              {tagPhotoFile ? tagPhotoFile.name : formData.tagPhotoFileName || "Click to choose or drag & drop"}
                             </p>
                             <p className="text-[10px] sm:text-xs text-muted-foreground">
                               Max 10MB
                             </p>
                           </div>
-                          <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                          <Camera className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                         </div>
                         <input
-                          id="vehicle-reg-input"
+                          id="vehicle-photo-input"
                           type="file"
+                          accept="image/*"
                           className="hidden"
                           onChange={(e) => {
                             const f = e.target.files?.[0] || null;
-                            setRegistrationFile(f);
-                            setFormData({ ...formData, registrationFileName: f?.name || "" });
+                            setTagPhotoFile(f);
+                            if (f) void readFileAsDataUrl(f).then((url) => setFormData((p) => ({ ...p, tagPhotoFileName: f.name, tagPhotoDataUrl: url })));
                           }}
                         />
                       </motion.div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <label className="block text-xs sm:text-sm font-medium mb-1.5">Insurance Document</label>
-                      <motion.div
-                        className="w-full rounded-lg border px-3 py-3 text-sm sm:text-base bg-gradient-to-br from-muted/20 to-muted/5 hover:from-muted/30 hover:to-muted/10 transition-all cursor-pointer"
-                        onDragOver={(e) => {
-                          e.preventDefault();
-                        }}
-                        onDrop={(e) => {
-                          e.preventDefault();
-                          const f = e.dataTransfer.files?.[0];
-                          if (f) {
-                            setInsuranceFile(f);
-                            setFormData({ ...formData, insuranceFileName: f.name });
-                          }
-                        }}
-                        onClick={() => {
-                          const el = document.getElementById("vehicle-ins-input") as HTMLInputElement | null;
-                          el?.click();
-                        }}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") {
-                            const el = document.getElementById("vehicle-ins-input") as HTMLInputElement | null;
-                            el?.click();
-                          }
-                        }}
-                        whileHover={{ scale: 1.01 }}
-                        whileTap={{ scale: 0.99 }}
-                      >
-                        <div className="flex items-center justify-between gap-3">
-                          <div className="min-w-0">
-                            <p className="text-xs sm:text-sm font-medium truncate">
-                              {insuranceFile ? insuranceFile.name : "Click to choose or drag & drop"}
-                            </p>
-                            <p className="text-[10px] sm:text-xs text-muted-foreground">
-                              Max 10MB
-                            </p>
-                          </div>
-                          <Shield className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                        </div>
-                        <input
-                          id="vehicle-ins-input"
-                          type="file"
-                          className="hidden"
-                          onChange={(e) => {
-                            const f = e.target.files?.[0] || null;
-                            setInsuranceFile(f);
-                            setFormData({ ...formData, insuranceFileName: f?.name || "" });
-                          }}
-                        />
-                      </motion.div>
-                    </div>
+                    {formData.tagPhotoDataUrl && (
+                      <div className="mt-2">
+                        <img src={formData.tagPhotoDataUrl} alt="Vehicle preview" className="h-20 w-20 object-contain rounded-lg border" />
+                      </div>
+                    )}
                   </div>
                 </motion.form>
 
@@ -945,16 +909,23 @@ const Vehicles = () => {
                           onHoverEnd={() => setHoveredVehicle(null)}
                           className="bg-gradient-to-br from-card to-card/50 rounded-xl border p-4 space-y-3 shadow-lg hover:shadow-xl transition-all duration-300"
                         >
-                          {/* Header with Icon and Actions */}
+                          {/* Header with Photo and Actions */}
                           <div className="flex items-start justify-between">
                             <div className="flex items-center gap-3 flex-1 min-w-0">
                               <motion.div
                                 whileHover={{ scale: 1.1, rotate: 5 }}
                                 transition={{ type: "spring", stiffness: 300, damping: 10 }}
                               >
-                                <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center flex-shrink-0 ring-2 ring-primary/20">
-                                  <Car className="h-5 w-5 text-primary" />
-                                </div>
+                                {(() => {
+                                  const photoSrc = getVehicleTagPhotoSrc(vehicle);
+                                  return photoSrc ? (
+                                    <img src={photoSrc} alt={vehicle.model} className="h-10 w-10 rounded-lg object-cover ring-2 ring-primary/20" />
+                                  ) : (
+                                    <div className="h-10 w-10 rounded-lg bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center flex-shrink-0 ring-2 ring-primary/20">
+                                      <Car className="h-5 w-5 text-primary" />
+                                    </div>
+                                  );
+                                })()}
                               </motion.div>
                               <div className="min-w-0 flex-1">
                                 <p className="font-medium text-sm truncate flex items-center gap-2">
@@ -1142,9 +1113,16 @@ const Vehicles = () => {
                                     whileHover={{ scale: 1.1, rotate: 5 }}
                                     transition={{ type: "spring", stiffness: 300, damping: 10 }}
                                   >
-                                    <div className="h-9 w-9 md:h-10 md:w-10 rounded-lg bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center flex-shrink-0 ring-2 ring-primary/20">
-                                      <Car className="h-4 w-4 md:h-5 md:w-5 text-primary" />
-                                    </div>
+                                    {(() => {
+                                      const photoSrc = getVehicleTagPhotoSrc(vehicle);
+                                      return photoSrc ? (
+                                        <img src={photoSrc} alt={vehicle.model} className="h-9 w-9 md:h-10 md:w-10 rounded-lg object-cover ring-2 ring-primary/20" />
+                                      ) : (
+                                        <div className="h-9 w-9 md:h-10 md:w-10 rounded-lg bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center flex-shrink-0 ring-2 ring-primary/20">
+                                          <Car className="h-4 w-4 md:h-5 md:w-5 text-primary" />
+                                        </div>
+                                      );
+                                    })()}
                                   </motion.div>
                                   <div className="min-w-0">
                                     <p className="font-medium text-sm md:text-base truncate max-w-[200px] lg:max-w-[250px] flex items-center gap-2">
@@ -1267,6 +1245,25 @@ const Vehicles = () => {
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2 }}
             >
+              {/* Vehicle Photo Display */}
+              {(() => {
+                const photoSrc = getVehicleTagPhotoSrc(selectedVehicle);
+                return photoSrc ? (
+                  <motion.div 
+                    className="flex justify-center"
+                    initial={{ scale: 0.9, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    transition={{ delay: 0.3 }}
+                  >
+                    <img 
+                      src={photoSrc} 
+                      alt={`${selectedVehicle.make} ${selectedVehicle.model}`}
+                      className="h-32 w-32 object-cover rounded-xl border-2 ring-2 ring-primary/20 shadow-lg"
+                    />
+                  </motion.div>
+                ) : null;
+              })()}
+
               <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b pb-4">
                 <div className="flex items-center gap-3">
                   <motion.div
@@ -1373,28 +1370,6 @@ const Vehicles = () => {
                       }
                       return null;
                     })()}
-                  </div>
-                </motion.div>
-                
-                <motion.div 
-                  className="space-y-1.5"
-                  whileHover={{ x: 5 }}
-                >
-                  <label className="text-xs sm:text-sm font-medium">Registration</label>
-                  <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground bg-gradient-to-br from-muted/30 to-muted/10 p-2 rounded-lg break-all">
-                    <FileText className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" />
-                    <span>{selectedVehicle.registrationFileName ? selectedVehicle.registrationFileName : "—"}</span>
-                  </div>
-                </motion.div>
-                
-                <motion.div 
-                  className="space-y-1.5"
-                  whileHover={{ x: 5 }}
-                >
-                  <label className="text-xs sm:text-sm font-medium">Insurance</label>
-                  <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground bg-gradient-to-br from-muted/30 to-muted/10 p-2 rounded-lg break-all">
-                    <Shield className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" />
-                    <span>{selectedVehicle.insuranceFileName ? selectedVehicle.insuranceFileName : "—"}</span>
                   </div>
                 </motion.div>
               </div>
@@ -1570,28 +1545,69 @@ const Vehicles = () => {
                 </div>
               </div>
 
-              {/* Document File Names */}
-              <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+              {/* Vehicle Photo Upload */}
+              <div className="flex flex-col gap-3">
                 <div className="flex-1 min-w-0">
-                  <label className="block text-xs sm:text-sm font-medium mb-1.5">Registration (File Name)</label>
-                  <input
-                    type="text"
-                    value={editFormData.registrationFileName}
-                    onChange={(e) =>
-                      setEditFormData({ ...editFormData, registrationFileName: e.target.value })
-                    }
-                    className="w-full rounded-lg border px-3 py-2 text-sm sm:text-base h-9 sm:h-10 focus:ring-2 focus:ring-primary/20 transition-all"
-                    placeholder="e.g., registration.pdf"
-                  />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <label className="block text-xs sm:text-sm font-medium mb-1.5">Insurance (File Name)</label>
-                  <input
-                    type="text"
-                    value={editFormData.insuranceFileName}
-                    onChange={(e) => setEditFormData({ ...editFormData, insuranceFileName: e.target.value })}
-                    className="w-full rounded-lg border px-3 py-2 text-sm sm:text-base h-9 sm:h-10 focus:ring-2 focus:ring-primary/20 transition-all"
-                  />
+                  <label className="block text-xs sm:text-sm font-medium mb-1.5">Vehicle Photo</label>
+                  {(() => {
+                    const currentPhoto = editTagPhotoFile 
+                      ? URL.createObjectURL(editTagPhotoFile)
+                      : getVehicleTagPhotoSrc(selectedVehicle);
+                    return currentPhoto ? (
+                      <div className="mb-2">
+                        <img src={currentPhoto} alt="Current vehicle" className="h-20 w-20 object-cover rounded-lg border" />
+                      </div>
+                    ) : null;
+                  })()}
+                  <motion.div
+                    className="w-full rounded-lg border px-3 py-3 text-sm sm:text-base bg-gradient-to-br from-muted/20 to-muted/5 hover:from-muted/30 hover:to-muted/10 transition-all cursor-pointer"
+                    onDragOver={(e) => { e.preventDefault(); }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      const f = e.dataTransfer.files?.[0];
+                      if (f) {
+                        setEditTagPhotoFile(f);
+                        void readFileAsDataUrl(f).then((url) => setEditFormData((p) => ({ ...p, tagPhotoFileName: f.name, tagPhotoDataUrl: url })));
+                      }
+                    }}
+                    onClick={() => {
+                      const el = document.getElementById("edit-vehicle-photo-input") as HTMLInputElement | null;
+                      el?.click();
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        const el = document.getElementById("edit-vehicle-photo-input") as HTMLInputElement | null;
+                        el?.click();
+                      }
+                    }}
+                    whileHover={{ scale: 1.01 }}
+                    whileTap={{ scale: 0.99 }}
+                  >
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="text-xs sm:text-sm font-medium truncate">
+                          {editTagPhotoFile ? editTagPhotoFile.name : editFormData.tagPhotoFileName || "Click to choose or drag & drop"}
+                        </p>
+                        <p className="text-[10px] sm:text-xs text-muted-foreground">
+                          Max 10MB
+                        </p>
+                      </div>
+                      <Camera className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                    </div>
+                    <input
+                      id="edit-vehicle-photo-input"
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0] || null;
+                        setEditTagPhotoFile(f);
+                        if (f) void readFileAsDataUrl(f).then((url) => setEditFormData((p) => ({ ...p, tagPhotoFileName: f.name, tagPhotoDataUrl: url })));
+                      }}
+                    />
+                  </motion.div>
                 </div>
               </div>
             </motion.form>

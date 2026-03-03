@@ -162,7 +162,7 @@ const tableRowVariants = {
     x: 0,
     transition: {
       delay: i * 0.05,
-      type: "spring",
+      type: "spring" as const,
       stiffness: 400,
       damping: 30,
     },
@@ -180,7 +180,7 @@ const cardVariants = {
     opacity: 1,
     scale: 1,
     transition: {
-      type: "spring",
+      type: "spring" as const,
       stiffness: 400,
       damping: 30,
     },
@@ -192,7 +192,7 @@ const cardVariants = {
   },
   hover: {
     scale: 1.02,
-    transition: { type: "spring", stiffness: 400, damping: 30 },
+    transition: { type: "spring" as const, stiffness: 400, damping: 30 },
   },
 };
 
@@ -202,7 +202,7 @@ const filterBarVariants = {
     opacity: 1,
     y: 0,
     transition: {
-      type: "spring",
+      type: "spring" as const,
       stiffness: 500,
       damping: 30,
       delay: 0.1,
@@ -216,7 +216,7 @@ const statsVariants = {
     opacity: 1,
     y: 0,
     transition: {
-      type: "spring",
+      type: "spring" as const,
       stiffness: 500,
       damping: 30,
       delay: 0.3,

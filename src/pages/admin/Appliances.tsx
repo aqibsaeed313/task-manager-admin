@@ -45,7 +45,8 @@ import {
   Home,
   Building2,
 } from "lucide-react";
-import { listResource } from "@/lib/admin/apiClient";
+import { listResource, apiFetch } from "@/lib/admin/apiClient";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
 interface Appliance {
   id: string;
@@ -138,6 +139,7 @@ const cardVariants: Variants = {
 };
 
 export default function Appliances() {
+  const queryClient = useQueryClient();
   const [searchQuery, setSearchQuery] = useState("");
   const [addOpen, setAddOpen] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
@@ -147,17 +149,31 @@ export default function Appliances() {
   const [selected, setSelected] = useState<Appliance | null>(null);
   const [hoveredAppliance, setHoveredAppliance] = useState<string | null>(null);
 
-  const [appliancesList, setAppliancesList] = useState<Appliance[]>(() => {
-    const saved = localStorage.getItem(APPLIANCES_STORAGE_KEY);
-    if (!saved) return [];
-    try {
-      const parsed = JSON.parse(saved) as unknown;
-      if (Array.isArray(parsed)) return parsed as Appliance[];
-    } catch {
-      // ignore
-    }
-    return [];
+  // Fetch appliances from backend
+  const appliancesQuery = useQuery({
+    queryKey: ["appliances"],
+    queryFn: async () => {
+      const res = await apiFetch<{ items?: any[] }>("/api/appliances");
+      return res.items || [];
+    },
   });
+
+  const appliancesList = useMemo(() => {
+    const items = appliancesQuery.data || [];
+    return items.map((a: any) => ({
+      id: String(a._id || a.id || ""),
+      name: String(a.name || ""),
+      type: String(a.type || a.category || "commercial") as "residential" | "commercial",
+      location: String(a.location || ""),
+      purchaseDate: String(a.purchaseDate || a.lastMaintenance || ""),
+      warrantyUntil: String(a.warrantyUntil || a.warrantyExpiry || ""),
+      status: String(a.status || "active") as "active" | "inactive",
+      tagPhotoFileName: a.tagPhotoFileName || "",
+      tagPhotoDataUrl: a.tagPhotoDataUrl || a.tagPhotoAttachment?.url || "",
+      assignedTo: a.assignedTo || "",
+    }));
+  }, [appliancesQuery.data]);
+
   const [employees, setEmployees] = useState<Employee[]>([]);
 
   const [formData, setFormData] = useState({
@@ -208,11 +224,64 @@ export default function Appliances() {
     return null;
   };
 
-  useEffect(() => {
-    localStorage.setItem(APPLIANCES_STORAGE_KEY, JSON.stringify(appliancesList));
-  }, [appliancesList]);
+  // Mutations for CRUD operations
+  const createApplianceMutation = useMutation({
+    mutationFn: async (payload: Omit<Appliance, "id">) => {
+      const res = await apiFetch<{ item: any }>("/api/appliances", {
+        method: "POST",
+        body: JSON.stringify({
+          name: payload.name,
+          category: payload.type,
+          serialNumber: payload.location,
+          location: payload.location,
+          status: payload.status === "active" ? "operational" : "out-of-service",
+          warrantyExpiry: payload.warrantyUntil,
+          lastMaintenance: payload.purchaseDate,
+          assignedTo: payload.assignedTo,
+          tagPhotoFileName: payload.tagPhotoFileName,
+          tagPhotoDataUrl: payload.tagPhotoDataUrl,
+        }),
+      });
+      return res.item;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["appliances"] });
+    },
+  });
 
-  // Fetch employees for dropdown
+  const updateApplianceMutation = useMutation({
+    mutationFn: async ({ id, payload }: { id: string; payload: Partial<Appliance> }) => {
+      const res = await apiFetch<{ item: any }>(`/api/appliances/${id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          name: payload.name,
+          category: payload.type,
+          serialNumber: payload.location,
+          location: payload.location,
+          status: payload.status === "active" ? "operational" : "out-of-service",
+          warrantyExpiry: payload.warrantyUntil,
+          lastMaintenance: payload.purchaseDate,
+          assignedTo: payload.assignedTo,
+          tagPhotoFileName: payload.tagPhotoFileName,
+          tagPhotoDataUrl: payload.tagPhotoDataUrl,
+        }),
+      });
+      return res.item;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["appliances"] });
+    },
+  });
+
+  const deleteApplianceMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiFetch<{ ok: true }>(`/api/appliances/${id}`, { method: "DELETE" });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["appliances"] });
+    },
+  });
+
   useEffect(() => {
     let mounted = true;
     const loadEmployees = async () => {
@@ -293,8 +362,7 @@ export default function Appliances() {
       }
     }
 
-    const next: Appliance = {
-      id: `APP-${Date.now().toString().slice(-6)}`,
+    const payload: Omit<Appliance, "id"> = {
       name: formData.name,
       type: formData.type,
       location: formData.location,
@@ -305,7 +373,8 @@ export default function Appliances() {
       tagPhotoDataUrl,
       assignedTo: formData.assignedTo || "",
     };
-    setAppliancesList((prev) => [next, ...prev]);
+
+    await createApplianceMutation.mutateAsync(payload);
     setAddOpen(false);
     setFormData({
       name: "",
@@ -343,27 +412,23 @@ export default function Appliances() {
     setEditOpen(true);
   };
 
-  const onSaveEdit = () => {
+  const onSaveEdit = async () => {
     if (!selected) return;
     if (!editFormData.name || !editFormData.location) return;
-    setAppliancesList((prev) =>
-      prev.map((a) =>
-        a.id !== selected.id
-          ? a
-          : {
-              ...a,
-              name: editFormData.name,
-              type: editFormData.type,
-              location: editFormData.location,
-              purchaseDate: editFormData.purchaseDate,
-              warrantyUntil: editFormData.warrantyUntil,
-              status: editFormData.status,
-              tagPhotoFileName: editFormData.tagPhotoFileName || "",
-              tagPhotoDataUrl: editFormData.tagPhotoDataUrl || "",
-              assignedTo: editFormData.assignedTo || "",
-            }
-      )
-    );
+    await updateApplianceMutation.mutateAsync({
+      id: selected.id,
+      payload: {
+        name: editFormData.name,
+        type: editFormData.type,
+        location: editFormData.location,
+        purchaseDate: editFormData.purchaseDate,
+        warrantyUntil: editFormData.warrantyUntil,
+        status: editFormData.status,
+        tagPhotoFileName: editFormData.tagPhotoFileName,
+        tagPhotoDataUrl: editFormData.tagPhotoDataUrl,
+        assignedTo: editFormData.assignedTo,
+      },
+    });
     setEditOpen(false);
     setSelected(null);
   };
@@ -373,18 +438,13 @@ export default function Appliances() {
     setDeactivateOpen(true);
   };
 
-  const confirmToggle = () => {
+  const confirmToggle = async () => {
     if (!selected) return;
-    setAppliancesList((prev) =>
-      prev.map((a) =>
-        a.id !== selected.id
-          ? a
-          : {
-              ...a,
-              status: a.status === "inactive" ? "active" : "inactive",
-            }
-      )
-    );
+    const newStatus = selected.status === "inactive" ? "active" : "inactive";
+    await updateApplianceMutation.mutateAsync({
+      id: selected.id,
+      payload: { status: newStatus },
+    });
     setDeactivateOpen(false);
     setSelected(null);
   };
@@ -394,9 +454,9 @@ export default function Appliances() {
     setDeleteOpen(true);
   };
 
-  const confirmDelete = () => {
+  const confirmDelete = async () => {
     if (!selected) return;
-    setAppliancesList((prev) => prev.filter((a) => a.id !== selected.id));
+    await deleteApplianceMutation.mutateAsync(selected.id);
     setDeleteOpen(false);
     setSelected(null);
   };
