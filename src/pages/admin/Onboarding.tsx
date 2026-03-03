@@ -13,17 +13,15 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/admin/ui/dialog";
 import {
-  Plus,
   CheckCircle2,
   Clock,
   FileText,
   AlertCircle,
   UserPlus,
 } from "lucide-react";
-import { createResource, listResource, updateResource, apiFetch } from "@/lib/admin/apiClient";
+import { listResource, updateResource } from "@/lib/admin/apiClient";
 
 interface OnboardingEmployee {
   id: string;
@@ -94,29 +92,14 @@ const approvalClasses = {
 const allSteps = ["Personal Info", "W-4 Form", "I-9 Form", "Direct Deposit", "Handbook"];
 
 const Onboarding = () => {
-  const [startOnboardingOpen, setStartOnboardingOpen] = useState(false);
   const [viewDetailsOpen, setViewDetailsOpen] = useState(false);
   const [selectedEmployee, setSelectedEmployee] = useState<OnboardingEmployee | null>(null);
+  const [detailsApprovalStatus, setDetailsApprovalStatus] = useState<OnboardingEmployee["approvalStatus"]>("pending");
+  const [savingDetails, setSavingDetails] = useState(false);
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
   const [onboardingList, setOnboardingList] = useState<OnboardingEmployee[]>(() => []);
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [formData, setFormData] = useState({
-    name: "",
-    employeeId: "",
-    email: "",
-    startDate: "",
-    status: "pending" as OnboardingEmployee["status"],
-    w4FileName: "",
-    i9FileName: "",
-    signatureFileName: "",
-    generatedPdfFileName: "",
-  });
-
-  const [w4File, setW4File] = useState<File | null>(null);
-  const [i9File, setI9File] = useState<File | null>(null);
-  const [signatureFile, setSignatureFile] = useState<File | null>(null);
-  const [generatedPdfFile, setGeneratedPdfFile] = useState<File | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -241,92 +224,17 @@ const Onboarding = () => {
   };
 
   const summary = useMemo(() => {
+    const total = onboardingList.length;
+    const pending = onboardingList.filter((e) => e.approvalStatus === "pending").length;
+    const approved = onboardingList.filter((e) => e.approvalStatus === "approved").length;
+    const rejected = onboardingList.filter((e) => e.approvalStatus === "rejected").length;
     return {
-      pending: onboardingList.filter((e) => e.status === "pending").length,
-      inProgress: onboardingList.filter((e) => e.status === "in-progress").length,
-      needsReview: onboardingList.filter((e) => e.status === "needs-review").length,
-      completed: onboardingList.filter((e) => e.status === "completed").length,
+      total,
+      pending,
+      approved,
+      rejected,
     };
   }, [onboardingList]);
-
-  const handleStartOnboarding = async () => {
-    if (!formData.name || !formData.email || !formData.startDate) return;
-
-    const initials = formData.name
-      .split(" ")
-      .map((n) => n[0])
-      .slice(0, 2)
-      .join("")
-      .toUpperCase();
-
-    const isCompleted = formData.status === "completed";
-    const isPending = formData.status === "pending";
-
-    const next: OnboardingEmployee = {
-      id: `ONB-${Date.now().toString().slice(-6)}`,
-      name: formData.name,
-      initials,
-      email: formData.email,
-      startDate: formData.startDate,
-      progress: isCompleted ? 100 : 0,
-      status: formData.status,
-      approvalStatus: "pending",
-      employeeId: formData.employeeId || undefined,
-      w4FileName: formData.w4FileName || "",
-      i9FileName: formData.i9FileName || "",
-      signatureFileName: formData.signatureFileName || "",
-      generatedPdfFileName: formData.generatedPdfFileName || "",
-      completedSteps: isCompleted ? [...allSteps] : [],
-      pendingSteps: isCompleted ? [] : isPending ? [...allSteps] : [...allSteps],
-    };
-
-    const hasFiles = w4File || i9File || signatureFile || generatedPdfFile;
-
-    try {
-      setApiError(null);
-
-      if (hasFiles) {
-        const fd = new FormData();
-        fd.append("name", formData.name);
-        fd.append("email", formData.email);
-        fd.append("startDate", formData.startDate);
-        fd.append("status", formData.status);
-        fd.append("progress", String(isCompleted ? 100 : 0));
-        fd.append("approvalStatus", "pending");
-        if (w4File) fd.append("w4File", w4File);
-        if (i9File) fd.append("i9File", i9File);
-        if (signatureFile) fd.append("signatureFile", signatureFile);
-        if (generatedPdfFile) fd.append("generatedPdfFile", generatedPdfFile);
-
-        await apiFetch<{ item: BackendOnboarding }>("/api/onboarding/upload", {
-          method: "POST",
-          body: fd,
-        });
-      } else {
-        await createResource<OnboardingEmployee>("onboarding", next);
-      }
-
-      await refresh();
-      setStartOnboardingOpen(false);
-      setFormData({
-        name: "",
-        employeeId: "",
-        email: "",
-        startDate: "",
-        status: "pending",
-        w4FileName: "",
-        i9FileName: "",
-        signatureFileName: "",
-        generatedPdfFileName: "",
-      });
-      setW4File(null);
-      setI9File(null);
-      setSignatureFile(null);
-      setGeneratedPdfFile(null);
-    } catch (e) {
-      setApiError(e instanceof Error ? e.message : "Failed to start onboarding");
-    }
-  };
 
   const setApproval = async (id: string, approvalStatus: OnboardingEmployee["approvalStatus"]) => {
     const employee = onboardingList.find((e) => e.id === id);
@@ -341,8 +249,20 @@ const Onboarding = () => {
     setSelectedEmployee((prev) => (prev && prev.id === id ? { ...prev, approvalStatus } : prev));
   };
 
+  const saveDetailsApproval = async () => {
+    if (!selectedEmployee) return;
+    try {
+      setSavingDetails(true);
+      await setApproval(selectedEmployee.id, detailsApprovalStatus);
+      setViewDetailsOpen(false);
+    } finally {
+      setSavingDetails(false);
+    }
+  };
+
   const handleViewDetails = (employee: OnboardingEmployee) => {
     setSelectedEmployee(employee);
+    setDetailsApprovalStatus(employee.approvalStatus);
     setViewDetailsOpen(true);
   };
 
@@ -361,324 +281,6 @@ const Onboarding = () => {
               Track and manage new employee onboarding progress.
             </p>
           </div>
-
-          {/* Start Onboarding Dialog */}
-          <Dialog open={startOnboardingOpen} onOpenChange={setStartOnboardingOpen}>
-            <DialogTrigger asChild>
-              <Button className="bg-accent hover:bg-accent/90 text-accent-foreground w-full sm:w-auto mt-2 sm:mt-0">
-                <Plus className="h-4 w-4 mr-2 flex-shrink-0" />
-                <span className="sm:hidden">Start</span>
-                <span className="hidden sm:inline">Start Onboarding</span>
-              </Button>
-            </DialogTrigger>
-            
-            <DialogContent className="w-[95vw] max-w-2xl mx-auto p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
-              <DialogHeader className="space-y-1.5 sm:space-y-2">
-                <DialogTitle className="text-lg sm:text-xl">Start Onboarding</DialogTitle>
-                <DialogDescription className="text-xs sm:text-sm">
-                  Create a new onboarding record for an employee
-                </DialogDescription>
-              </DialogHeader>
-
-              <form className="space-y-4 sm:space-y-5">
-                {/* Employee Name & Email */}
-                <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-                  <div className="flex-1 min-w-0">
-                    <label className="block text-xs sm:text-sm font-medium mb-1.5">Employee *</label>
-                    <select
-                      value={formData.employeeId}
-                      onChange={(e) => {
-                        const empId = e.target.value;
-                        const emp = employees.find((e) => e.id === empId);
-                        setFormData({ ...formData, employeeId: empId, name: emp?.name || "", email: emp?.email || "" });
-                      }}
-                      className="w-full rounded-md border px-3 py-2 text-sm sm:text-base bg-white h-9 sm:h-10"
-                      required
-                    >
-                      <option value="">Select employee</option>
-                      {employees.map((emp) => (
-                        <option key={emp.id} value={emp.id}>
-                          {emp.name}
-                        </option>
-                      ))}
-                    </select>
-                    {employees.length === 0 && (
-                      <p className="text-xs text-warning mt-1">No employees found.</p>
-                    )}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <label className="block text-xs sm:text-sm font-medium mb-1.5">Email *</label>
-                    <Input
-                      type="email"
-                      value={formData.email}
-                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                      placeholder="john@company.com"
-                      required
-                      className="h-9 sm:h-10 text-sm sm:text-base"
-                    />
-                  </div>
-                </div>
-
-                {/* Start Date & Status */}
-                <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-                  <div className="flex-1 min-w-0">
-                    <label className="block text-xs sm:text-sm font-medium mb-1.5">Start Date *</label>
-                    <Input
-                      type="date"
-                      value={formData.startDate}
-                      onChange={(e) => setFormData({ ...formData, startDate: e.target.value })}
-                      required
-                      className="h-9 sm:h-10 text-sm sm:text-base"
-                    />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <label className="block text-xs sm:text-sm font-medium mb-1.5">Status</label>
-                    <select
-                      value={formData.status}
-                      onChange={(e) =>
-                        setFormData({ ...formData, status: e.target.value as OnboardingEmployee["status"] })
-                      }
-                      className="w-full rounded-md border px-3 py-2 text-sm sm:text-base bg-white h-9 sm:h-10"
-                    >
-                      <option value="pending">Not Started</option>
-                      <option value="in-progress">In Progress</option>
-                      <option value="needs-review">Needs Review</option>
-                      <option value="completed">Completed</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* W-4 & I-9 File Uploads */}
-                <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-                  <div className="flex-1 min-w-0">
-                    <label className="block text-xs sm:text-sm font-medium mb-1.5">W-4 Document</label>
-                    <div
-                      className="w-full rounded-md border px-3 py-3 text-sm sm:text-base bg-muted/20 hover:bg-muted/30 transition-colors cursor-pointer"
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                      }}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        const f = e.dataTransfer.files?.[0];
-                        if (f) {
-                          setW4File(f);
-                          setFormData({ ...formData, w4FileName: f.name });
-                        }
-                      }}
-                      onClick={() => {
-                        const el = document.getElementById("onboarding-w4-input") as HTMLInputElement | null;
-                        el?.click();
-                      }}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          const el = document.getElementById("onboarding-w4-input") as HTMLInputElement | null;
-                          el?.click();
-                        }
-                      }}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-xs sm:text-sm font-medium truncate">
-                            {w4File ? w4File.name : "Click to choose or drag & drop"}
-                          </p>
-                          <p className="text-[10px] sm:text-xs text-muted-foreground">
-                            Max 10MB
-                          </p>
-                        </div>
-                        <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                      </div>
-                      <input
-                        id="onboarding-w4-input"
-                        type="file"
-                        className="hidden"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0] || null;
-                          setW4File(f);
-                          setFormData({ ...formData, w4FileName: f?.name || "" });
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <label className="block text-xs sm:text-sm font-medium mb-1.5">I-9 Document</label>
-                    <div
-                      className="w-full rounded-md border px-3 py-3 text-sm sm:text-base bg-muted/20 hover:bg-muted/30 transition-colors cursor-pointer"
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                      }}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        const f = e.dataTransfer.files?.[0];
-                        if (f) {
-                          setI9File(f);
-                          setFormData({ ...formData, i9FileName: f.name });
-                        }
-                      }}
-                      onClick={() => {
-                        const el = document.getElementById("onboarding-i9-input") as HTMLInputElement | null;
-                        el?.click();
-                      }}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          const el = document.getElementById("onboarding-i9-input") as HTMLInputElement | null;
-                          el?.click();
-                        }
-                      }}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-xs sm:text-sm font-medium truncate">
-                            {i9File ? i9File.name : "Click to choose or drag & drop"}
-                          </p>
-                          <p className="text-[10px] sm:text-xs text-muted-foreground">
-                            Max 10MB
-                          </p>
-                        </div>
-                        <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                      </div>
-                      <input
-                        id="onboarding-i9-input"
-                        type="file"
-                        className="hidden"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0] || null;
-                          setI9File(f);
-                          setFormData({ ...formData, i9FileName: f?.name || "" });
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* Signature & Generated PDF File Uploads */}
-                <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-                  <div className="flex-1 min-w-0">
-                    <label className="block text-xs sm:text-sm font-medium mb-1.5">Signature Document</label>
-                    <div
-                      className="w-full rounded-md border px-3 py-3 text-sm sm:text-base bg-muted/20 hover:bg-muted/30 transition-colors cursor-pointer"
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                      }}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        const f = e.dataTransfer.files?.[0];
-                        if (f) {
-                          setSignatureFile(f);
-                          setFormData({ ...formData, signatureFileName: f.name });
-                        }
-                      }}
-                      onClick={() => {
-                        const el = document.getElementById("onboarding-sig-input") as HTMLInputElement | null;
-                        el?.click();
-                      }}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          const el = document.getElementById("onboarding-sig-input") as HTMLInputElement | null;
-                          el?.click();
-                        }
-                      }}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-xs sm:text-sm font-medium truncate">
-                            {signatureFile ? signatureFile.name : "Click to choose or drag & drop"}
-                          </p>
-                          <p className="text-[10px] sm:text-xs text-muted-foreground">
-                            Max 10MB
-                          </p>
-                        </div>
-                        <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                      </div>
-                      <input
-                        id="onboarding-sig-input"
-                        type="file"
-                        className="hidden"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0] || null;
-                          setSignatureFile(f);
-                          setFormData({ ...formData, signatureFileName: f?.name || "" });
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <label className="block text-xs sm:text-sm font-medium mb-1.5">Generated PDF</label>
-                    <div
-                      className="w-full rounded-md border px-3 py-3 text-sm sm:text-base bg-muted/20 hover:bg-muted/30 transition-colors cursor-pointer"
-                      onDragOver={(e) => {
-                        e.preventDefault();
-                      }}
-                      onDrop={(e) => {
-                        e.preventDefault();
-                        const f = e.dataTransfer.files?.[0];
-                        if (f) {
-                          setGeneratedPdfFile(f);
-                          setFormData({ ...formData, generatedPdfFileName: f.name });
-                        }
-                      }}
-                      onClick={() => {
-                        const el = document.getElementById("onboarding-pdf-input") as HTMLInputElement | null;
-                        el?.click();
-                      }}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") {
-                          const el = document.getElementById("onboarding-pdf-input") as HTMLInputElement | null;
-                          el?.click();
-                        }
-                      }}
-                    >
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <p className="text-xs sm:text-sm font-medium truncate">
-                            {generatedPdfFile ? generatedPdfFile.name : "Click to choose or drag & drop"}
-                          </p>
-                          <p className="text-[10px] sm:text-xs text-muted-foreground">
-                            Max 10MB
-                          </p>
-                        </div>
-                        <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                      </div>
-                      <input
-                        id="onboarding-pdf-input"
-                        type="file"
-                        className="hidden"
-                        onChange={(e) => {
-                          const f = e.target.files?.[0] || null;
-                          setGeneratedPdfFile(f);
-                          setFormData({ ...formData, generatedPdfFileName: f?.name || "" });
-                        }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </form>
-
-              <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-3 mt-4 sm:mt-6">
-                <Button 
-                  variant="outline" 
-                  onClick={() => setStartOnboardingOpen(false)}
-                  className="w-full sm:w-auto order-2 sm:order-1"
-                >
-                  Cancel
-                </Button>
-                <Button
-                  onClick={handleStartOnboarding}
-                  className="bg-accent hover:bg-accent/90 text-accent-foreground w-full sm:w-auto order-1 sm:order-2"
-                >
-                  <Plus className="h-4 w-4 mr-2 flex-shrink-0" />
-                  Start
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
         </div>
 
         {/* API Error Message */}
@@ -696,6 +298,20 @@ const Onboarding = () => {
             <CardContent className="p-4 sm:p-6">
               <div className="flex items-center gap-3 sm:gap-4">
                 <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
+                  <UserPlus className="h-5 w-5 sm:h-6 sm:w-6 text-muted-foreground" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs sm:text-sm text-muted-foreground">Total</p>
+                  <p className="text-xl sm:text-2xl font-bold">{summary.total}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card className="shadow-soft border-0 sm:border">
+            <CardContent className="p-4 sm:p-6">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-lg bg-muted flex items-center justify-center flex-shrink-0">
                   <Clock className="h-5 w-5 sm:h-6 sm:w-6 text-muted-foreground" />
                 </div>
                 <div className="min-w-0">
@@ -709,40 +325,26 @@ const Onboarding = () => {
           <Card className="shadow-soft border-0 sm:border">
             <CardContent className="p-4 sm:p-6">
               <div className="flex items-center gap-3 sm:gap-4">
-                <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-lg bg-info/10 flex items-center justify-center flex-shrink-0">
-                  <FileText className="h-5 w-5 sm:h-6 sm:w-6 text-info" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs sm:text-sm text-muted-foreground">In Progress</p>
-                  <p className="text-xl sm:text-2xl font-bold">{summary.inProgress}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card className="shadow-soft border-0 sm:border">
-            <CardContent className="p-4 sm:p-6">
-              <div className="flex items-center gap-3 sm:gap-4">
-                <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-lg bg-warning/10 flex items-center justify-center flex-shrink-0">
-                  <AlertCircle className="h-5 w-5 sm:h-6 sm:w-6 text-warning" />
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs sm:text-sm text-muted-foreground">Needs Review</p>
-                  <p className="text-xl sm:text-2xl font-bold">{summary.needsReview}</p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card className="shadow-soft border-0 sm:border">
-            <CardContent className="p-4 sm:p-6">
-              <div className="flex items-center gap-3 sm:gap-4">
                 <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-lg bg-success/10 flex items-center justify-center flex-shrink-0">
                   <CheckCircle2 className="h-5 w-5 sm:h-6 sm:w-6 text-success" />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs sm:text-sm text-muted-foreground">Completed</p>
-                  <p className="text-xl sm:text-2xl font-bold">{summary.completed}</p>
+                  <p className="text-xs sm:text-sm text-muted-foreground">Approved</p>
+                  <p className="text-xl sm:text-2xl font-bold">{summary.approved}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          
+          <Card className="shadow-soft border-0 sm:border">
+            <CardContent className="p-4 sm:p-6">
+              <div className="flex items-center gap-3 sm:gap-4">
+                <div className="h-10 w-10 sm:h-12 sm:w-12 rounded-lg bg-destructive/10 flex items-center justify-center flex-shrink-0">
+                  <AlertCircle className="h-5 w-5 sm:h-6 sm:w-6 text-destructive" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs sm:text-sm text-muted-foreground">Rejected</p>
+                  <p className="text-xl sm:text-2xl font-bold">{summary.rejected}</p>
                 </div>
               </div>
             </CardContent>
@@ -782,12 +384,6 @@ const Onboarding = () => {
                         <div className="flex-1 min-w-0">
                           <div className="flex flex-col sm:flex-row sm:items-center gap-2 mb-1">
                             <h4 className="font-medium text-sm sm:text-base truncate">{employee.name}</h4>
-                            <Badge 
-                              className={`${statusClasses[employee.status]} text-xs sm:text-sm w-fit`} 
-                              variant="secondary"
-                            >
-                              {statusLabels[employee.status]}
-                            </Badge>
                           </div>
                           <p className="text-xs sm:text-sm text-muted-foreground truncate">{employee.email}</p>
                           <div className="flex items-center gap-2 mt-1">
@@ -864,9 +460,6 @@ const Onboarding = () => {
                       </div>
                     </div>
                     <p className="text-sm sm:text-base text-muted-foreground">No onboarding records found</p>
-                    <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                      Click "Start Onboarding" to add a new employee
-                    </p>
                   </div>
                 )}
               </div>
@@ -891,12 +484,29 @@ const Onboarding = () => {
                   <Badge className={`${statusClasses[selectedEmployee.status]} text-xs sm:text-sm`} variant="secondary">
                     {statusLabels[selectedEmployee.status]}
                   </Badge>
-                  <Badge className={`${approvalClasses[selectedEmployee.approvalStatus]} text-xs sm:text-sm`} variant="secondary">
-                    {selectedEmployee.approvalStatus}
-                  </Badge>
                 </div>
                 <p className="text-xs sm:text-sm text-muted-foreground break-words">{selectedEmployee.email}</p>
                 <p className="text-xs text-muted-foreground mt-1">Start Date: {selectedEmployee.startDate}</p>
+
+                <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2 sm:gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-xs sm:text-sm font-medium">Approval Status</label>
+                    <select
+                      value={detailsApprovalStatus}
+                      onChange={(e) => setDetailsApprovalStatus(e.target.value as OnboardingEmployee["approvalStatus"])}
+                      className="w-full rounded-md border px-3 py-2 text-sm sm:text-base bg-white h-9 sm:h-10"
+                    >
+                      <option value="pending">Pending</option>
+                      <option value="approved">Approved</option>
+                      <option value="rejected">Rejected</option>
+                    </select>
+                    <div className="pt-1">
+                      <Badge className={`${approvalClasses[detailsApprovalStatus]} text-xs`} variant="secondary">
+                        Current: {detailsApprovalStatus}
+                      </Badge>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Documents Grid */}
@@ -977,22 +587,18 @@ const Onboarding = () => {
               <div className="flex flex-col sm:flex-row gap-2 w-full">
                 <Button
                   variant="outline"
-                  className="w-full sm:w-auto order-3 sm:order-1"
-                  onClick={() => setApproval(selectedEmployee.id, "rejected")}
-                >
-                  Reject
-                </Button>
-                <Button
-                  className="w-full sm:w-auto order-2 bg-success hover:bg-success/90 text-success-foreground"
-                  onClick={() => setApproval(selectedEmployee.id, "approved")}
-                >
-                  Approve
-                </Button>
-                <Button 
-                  className="w-full sm:w-auto order-1 sm:order-3" 
+                  className="w-full sm:w-auto order-2 sm:order-1"
                   onClick={() => setViewDetailsOpen(false)}
+                  disabled={savingDetails}
                 >
                   Close
+                </Button>
+                <Button
+                  className="w-full sm:w-auto order-1 sm:order-2"
+                  onClick={saveDetailsApproval}
+                  disabled={savingDetails}
+                >
+                  Save
                 </Button>
               </div>
             )}

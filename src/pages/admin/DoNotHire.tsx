@@ -40,6 +40,27 @@ interface BlacklistItem {
   status: "active" | "resolved";
 }
 
+type BackendDoNotHire = {
+  id?: string;
+  _id?: string;
+  name?: string;
+  employeeId?: string;
+  employeeName?: string;
+  employee?: {
+    id?: string;
+    _id?: string;
+    name?: string;
+  };
+  reason?: string;
+  incidentNotes?: string;
+  notes?: string;
+  addedAt?: string;
+  createdAt?: string;
+  date?: string;
+  status?: string;
+  resolved?: boolean;
+};
+
 interface Employee {
   id: string;
   name: string;
@@ -70,6 +91,39 @@ const seedItems: BlacklistItem[] = [
 const statusClasses = {
   active: "bg-destructive/10 text-destructive",
   resolved: "bg-success/10 text-success",
+};
+
+const toDateOnly = (value: string) => {
+  const v = String(value || "").trim();
+  if (!v) return "";
+  const idx = v.indexOf("T");
+  return idx >= 0 ? v.slice(0, idx) : v;
+};
+
+const normalizeDoNotHireItem = (item: BackendDoNotHire, employeesById: Map<string, Employee>): BlacklistItem => {
+  const id = String(item.id || item._id || "");
+  const employeeId =
+    item.employeeId || item.employee?.id || item.employee?._id
+      ? String(item.employeeId || item.employee?.id || item.employee?._id)
+      : undefined;
+  const fromEmployee = employeeId ? employeesById.get(employeeId)?.name : undefined;
+  const name = String(fromEmployee || item.employeeName || item.employee?.name || item.name || employeeId || "").trim();
+  const rawStatus = String(item.status || "active").toLowerCase();
+  const status: BlacklistItem["status"] =
+    item.resolved === true || rawStatus === "resolved" || rawStatus === "inactive" || rawStatus === "closed"
+      ? "resolved"
+      : "active";
+  const addedAt = String(item.addedAt || item.createdAt || item.date || "");
+
+  return {
+    id,
+    name,
+    employeeId,
+    reason: String(item.reason || ""),
+    incidentNotes: String(item.incidentNotes || item.notes || ""),
+    addedAt,
+    status,
+  };
 };
 
 export default function DoNotHire() {
@@ -109,12 +163,7 @@ export default function DoNotHire() {
       try {
         setLoading(true);
         setApiError(null);
-        
-        // Fetch blacklist items
-        const list = await listResource<BlacklistItem>("do-not-hire");
-        if (!mounted) return;
-        setItems(list);
-        
+
         // Fetch employees from employees API
         let allEmployees: Employee[] = [];
         try {
@@ -159,6 +208,12 @@ export default function DoNotHire() {
         if (mounted) {
           setEmployees(allEmployees);
         }
+
+        // Fetch blacklist items
+        const list = await listResource<BackendDoNotHire>("do-not-hire");
+        if (!mounted) return;
+        const employeesById = new Map(allEmployees.map((e) => [e.id, e] as const));
+        setItems(list.map((i) => normalizeDoNotHireItem(i, employeesById)).filter((i) => Boolean(i.id)));
       } catch (e) {
         if (!mounted) return;
         setApiError(e instanceof Error ? e.message : "Failed to load records");
@@ -174,8 +229,9 @@ export default function DoNotHire() {
   }, []);
 
   const refresh = async () => {
-    const list = await listResource<BlacklistItem>("do-not-hire");
-    setItems(list);
+    const list = await listResource<BackendDoNotHire>("do-not-hire");
+    const employeesById = new Map(employees.map((e) => [e.id, e] as const));
+    setItems(list.map((i) => normalizeDoNotHireItem(i, employeesById)).filter((i) => Boolean(i.id)));
   };
 
   const filtered = useMemo(() => {
@@ -204,20 +260,24 @@ export default function DoNotHire() {
   }, [items, searchQuery, sortBy]);
 
   const addItem = async () => {
-    if (!formData.name || !formData.reason) return;
-    const selectedEmployee = employees.find(e => e.id === formData.employeeId);
-    const next: BlacklistItem = {
-      id: `DNH-${Date.now().toString().slice(-6)}`,
-      name: formData.name,
+    if (!formData.employeeId || !formData.reason) return;
+    const selectedEmployee = employees.find((e) => e.id === formData.employeeId);
+    const selectedName = String(selectedEmployee?.name || formData.name || "").trim();
+    if (!selectedName) return;
+    const payload: BackendDoNotHire = {
+      name: selectedName,
       employeeId: formData.employeeId || undefined,
       reason: formData.reason,
       incidentNotes: formData.incidentNotes,
+      notes: formData.incidentNotes,
       status: formData.status,
-      addedAt: new Date().toISOString().split("T")[0],
+      resolved: formData.status === "resolved",
+      addedAt: new Date().toISOString(),
+      date: new Date().toISOString(),
     };
     try {
       setApiError(null);
-      await createResource<BlacklistItem>("do-not-hire", next);
+      await createResource<BackendDoNotHire>("do-not-hire", payload);
       await refresh();
       setAddOpen(false);
       setFormData({ name: "", employeeId: "", reason: "", incidentNotes: "", status: "active" });
@@ -245,15 +305,20 @@ export default function DoNotHire() {
 
   const saveEdit = async () => {
     if (!selected) return;
-    if (!editFormData.name || !editFormData.reason) return;
+    if (!editFormData.employeeId || !editFormData.reason) return;
+    const selectedEmployee = employees.find((e) => e.id === editFormData.employeeId);
+    const selectedName = String(selectedEmployee?.name || editFormData.name || "").trim();
+    if (!selectedName) return;
     try {
       setApiError(null);
-      await updateResource<BlacklistItem>("do-not-hire", selected.id, {
-        ...selected,
-        name: editFormData.name,
+      await updateResource<BackendDoNotHire>("do-not-hire", selected.id, {
+        name: selectedName,
+        employeeId: editFormData.employeeId || undefined,
         reason: editFormData.reason,
         incidentNotes: editFormData.incidentNotes,
+        notes: editFormData.incidentNotes,
         status: editFormData.status,
+        resolved: editFormData.status === "resolved",
       });
       await refresh();
       setEditOpen(false);
@@ -481,7 +546,6 @@ export default function DoNotHire() {
                           </div>
                           <div className="min-w-0 flex-1">
                             <p className="font-medium text-sm truncate">{i.name}</p>
-                            <p className="text-xs text-muted-foreground">{i.id}</p>
                           </div>
                         </div>
                         <DropdownMenu>
@@ -526,18 +590,9 @@ export default function DoNotHire() {
                           </div>
                           <div>
                             <p className="text-xs text-muted-foreground">Date Added</p>
-                            <p className="text-sm mt-1">{i.addedAt}</p>
+                            <p className="text-sm mt-1">{toDateOnly(i.addedAt)}</p>
                           </div>
                         </div>
-
-                        {i.incidentNotes && (
-                          <div>
-                            <p className="text-xs text-muted-foreground">Incident Notes</p>
-                            <p className="text-sm mt-0.5 text-muted-foreground line-clamp-2">
-                              {i.incidentNotes}
-                            </p>
-                          </div>
-                        )}
                       </div>
                     </div>
                   ))}
@@ -577,7 +632,6 @@ export default function DoNotHire() {
                                 <p className="font-medium text-sm md:text-base truncate max-w-[200px] lg:max-w-none">
                                   {i.name}
                                 </p>
-                                <p className="text-xs text-muted-foreground">{i.id}</p>
                               </div>
                             </div>
                           </TableCell>
@@ -586,11 +640,6 @@ export default function DoNotHire() {
                               <p className="text-sm md:text-base truncate max-w-[200px] lg:max-w-none">
                                 {i.reason}
                               </p>
-                              {i.incidentNotes && (
-                                <p className="text-xs text-muted-foreground truncate max-w-[200px] lg:max-w-none mt-0.5">
-                                  {i.incidentNotes}
-                                </p>
-                              )}
                             </div>
                           </TableCell>
                           <TableCell>
@@ -602,7 +651,7 @@ export default function DoNotHire() {
                             </Badge>
                           </TableCell>
                           <TableCell className="text-sm md:text-base text-muted-foreground">
-                            {i.addedAt}
+                            {toDateOnly(i.addedAt)}
                           </TableCell>
                           <TableCell className="text-right">
                             <DropdownMenu>
@@ -647,7 +696,6 @@ export default function DoNotHire() {
           {selected && (
             <div className="space-y-4 sm:space-y-5">
               <div className="border-b pb-3 sm:pb-4">
-                <p className="text-xs sm:text-sm text-muted-foreground">{selected.id}</p>
                 <p className="text-lg sm:text-xl font-semibold break-words">{selected.name}</p>
               </div>
               
@@ -672,16 +720,9 @@ export default function DoNotHire() {
                 </div>
                 
                 <div className="sm:col-span-2 space-y-1.5">
-                  <label className="text-xs sm:text-sm font-medium">Incident Notes</label>
-                  <p className="text-sm sm:text-base text-muted-foreground break-words whitespace-pre-wrap">
-                    {selected.incidentNotes || "—"}
-                  </p>
-                </div>
-
-                <div className="sm:col-span-2 space-y-1.5">
                   <label className="text-xs sm:text-sm font-medium">Date Added</label>
                   <p className="text-sm sm:text-base text-muted-foreground">
-                    {selected.addedAt}
+                    {toDateOnly(selected.addedAt)}
                   </p>
                 </div>
               </div>
@@ -763,6 +804,15 @@ export default function DoNotHire() {
                     <option value="active">Active</option>
                     <option value="resolved">Resolved</option>
                   </select>
+                </div>
+                <div className="w-full sm:w-1/2">
+                  <label className="block text-xs sm:text-sm font-medium mb-1.5">Date Added</label>
+                  <Input
+                    type="date"
+                    value={toDateOnly(selected.addedAt)}
+                    disabled
+                    className="bg-muted/20"
+                  />
                 </div>
               </div>
             </form>
