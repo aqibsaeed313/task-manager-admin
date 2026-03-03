@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/manger/ui/button";
 import { Input } from "@/components/manger/ui/input";
 import { Badge } from "@/components/manger/ui/badge";
@@ -55,6 +55,7 @@ import {
   AlertTriangle,
   CheckCircle,
   MoreHorizontal,
+  Camera,
 } from "lucide-react";
 import { cn } from "@/lib/manger/utils";
 import { apiFetch } from "@/lib/manger/api";
@@ -75,12 +76,28 @@ interface Vehicle {
   tagPhotoDataUrl?: string;
 }
 
+interface Employee {
+  id: string;
+  name: string;
+  initials: string;
+  email: string;
+  status: "active" | "inactive" | "on-leave";
+}
+
+interface User {
+  id: string;
+  name: string;
+  email: string;
+  role: "admin" | "manager" | "employee";
+  status: "active" | "inactive" | "pending";
+}
+
 type VehicleApi = Omit<Vehicle, "id"> & {
   _id: string;
 };
 
 function normalizeVehicle(v: VehicleApi): Vehicle {
-  return {
+  const result = {
     id: v._id,
     name: v.name,
     type: v.type,
@@ -94,6 +111,11 @@ function normalizeVehicle(v: VehicleApi): Vehicle {
     tagPhotoFileName: v.tagPhotoFileName,
     tagPhotoDataUrl: v.tagPhotoDataUrl,
   };
+  console.log("[DEBUG] normalizeVehicle:", v._id, "photo fields:", { 
+    tagPhotoFileName: v.tagPhotoFileName, 
+    hasDataUrl: !!v.tagPhotoDataUrl 
+  });
+  return result;
 }
 
 const getVehicleTagPhotoSrc = (v?: Partial<Vehicle> | null) => {
@@ -124,6 +146,8 @@ const createVehicleSchema = z.object({
   nextInspection: z.string().min(1, "Next inspection date is required"),
   fuelLevel: z.coerce.number().min(0, "Min 0").max(100, "Max 100"),
   mileage: z.coerce.number().min(0, "Must be 0 or greater"),
+  tagPhotoFileName: z.string().optional(),
+  tagPhotoDataUrl: z.string().optional(),
 });
 
 type CreateVehicleValues = z.infer<typeof createVehicleSchema>;
@@ -136,12 +160,91 @@ export default function Vehicles() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [selectedVehicle, setSelectedVehicle] = useState<Vehicle | null>(null);
+  const [tagPhotoFile, setTagPhotoFile] = useState<File | null>(null);
+  const [editTagPhotoFile, setEditTagPhotoFile] = useState<File | null>(null);
+  const [employees, setEmployees] = useState<Employee[]>([]);
   const queryClient = useQueryClient();
+
+  const readFileAsDataUrl = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result || ""));
+      reader.onerror = () => reject(new Error("Failed to read file"));
+      reader.readAsDataURL(file);
+    });
+  };
+
+  // Fetch employees on mount
+  useEffect(() => {
+    let mounted = true;
+    const loadEmployees = async () => {
+      try {
+        let allEmployees: Employee[] = [];
+        
+        // Fetch employees from employees API
+        try {
+          const res = await apiFetch<{ items: Employee[] }>("/api/employees");
+          if (mounted) {
+            allEmployees = res.items.filter((e) => e.status === "active");
+          }
+        } catch (empErr) {
+          console.error("Failed to load employees:", empErr);
+        }
+        
+        // Fetch users with employee role from users API
+        try {
+          const userRes = await apiFetch<{ items: User[] }>("/api/users");
+          if (mounted) {
+            const employeeUsers = userRes.items
+              .filter((u) => u.role === "employee" && (u.status === "active" || u.status === "pending"))
+              .map((u) => ({
+                id: u.id,
+                name: u.name,
+                initials: u.name
+                  .split(" ")
+                  .map((n) => n[0])
+                  .slice(0, 2)
+                  .join("")
+                  .toUpperCase(),
+                email: u.email,
+                status: "active" as const,
+              }));
+            
+            // Merge both lists (remove duplicates by email)
+            employeeUsers.forEach((eu) => {
+              if (!allEmployees.some((e) => e.email === eu.email)) {
+                allEmployees.push(eu);
+              }
+            });
+          }
+        } catch (userErr) {
+          console.error("Failed to load users:", userErr);
+        }
+        
+        if (mounted) {
+          setEmployees(allEmployees);
+        }
+      } catch (e) {
+        console.error("Failed to load employees:", e);
+      }
+    };
+    
+    void loadEmployees();
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const vehiclesQuery = useQuery({
     queryKey: ["vehicles"],
     queryFn: async () => {
       const res = await apiFetch<{ items: VehicleApi[] }>("/api/vehicles");
+      console.log("[DEBUG] Vehicles response:", res.items.map((v: any) => ({ 
+        id: v._id, 
+        name: v.name, 
+        tagPhotoFileName: v.tagPhotoFileName, 
+        tagPhotoDataUrl: v.tagPhotoDataUrl ? v.tagPhotoDataUrl.substring(0, 50) + "..." : "empty" 
+      })));
       return res.items.map(normalizeVehicle);
     },
   });
@@ -199,6 +302,8 @@ export default function Vehicles() {
       nextInspection: "",
       fuelLevel: 75,
       mileage: 0,
+      tagPhotoFileName: "",
+      tagPhotoDataUrl: "",
     },
   });
 
@@ -214,6 +319,8 @@ export default function Vehicles() {
       nextInspection: "",
       fuelLevel: 75,
       mileage: 0,
+      tagPhotoFileName: "",
+      tagPhotoDataUrl: "",
     },
   });
 
@@ -228,11 +335,14 @@ export default function Vehicles() {
       nextInspection: values.nextInspection,
       fuelLevel: values.fuelLevel,
       mileage: values.mileage,
+      tagPhotoFileName: values.tagPhotoFileName || "",
+      tagPhotoDataUrl: values.tagPhotoDataUrl || "",
     };
 
     createVehicleMutation.mutate(payload, {
       onSuccess: () => {
         setIsCreateOpen(false);
+        setTagPhotoFile(null);
         form.reset();
         toast({
           title: "Vehicle added",
@@ -255,6 +365,7 @@ export default function Vehicles() {
 
   const openEdit = (vehicle: Vehicle) => {
     setSelectedVehicle(vehicle);
+    setEditTagPhotoFile(null);
     editForm.reset({
       name: vehicle.name,
       type: vehicle.type,
@@ -265,6 +376,8 @@ export default function Vehicles() {
       nextInspection: vehicle.nextInspection,
       fuelLevel: vehicle.fuelLevel,
       mileage: vehicle.mileage,
+      tagPhotoFileName: vehicle.tagPhotoFileName || "",
+      tagPhotoDataUrl: vehicle.tagPhotoDataUrl || "",
     });
     setIsEditOpen(true);
   };
@@ -431,9 +544,24 @@ export default function Vehicles() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Assigned To</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Optional" {...field} />
-                      </FormControl>
+                      <Select value={field.value || "none"} onValueChange={(value) => field.onChange(value === "none" ? "" : value)}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select employee" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          {employees.map((emp) => (
+                            <SelectItem key={emp.id} value={emp.name}>
+                              {emp.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {employees.length === 0 && (
+                        <p className="text-xs text-muted-foreground mt-1">No employees found</p>
+                      )}
                       <FormMessage />
                     </FormItem>
                   )}
@@ -494,6 +622,60 @@ export default function Vehicles() {
                     </FormItem>
                   )}
                 />
+              </div>
+
+              {/* Vehicle Photo Upload */}
+              <div className="space-y-2">
+                <FormLabel>Vehicle Photo</FormLabel>
+                <div
+                  className="w-full rounded-lg border border-dashed border-border p-4 text-center cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => document.getElementById("vehicle-photo-input")?.click()}
+                  onDragOver={(e) => { e.preventDefault(); }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const f = e.dataTransfer.files?.[0];
+                    if (f) {
+                      setTagPhotoFile(f);
+                      void readFileAsDataUrl(f).then((url) => {
+                        form.setValue("tagPhotoFileName", f.name);
+                        form.setValue("tagPhotoDataUrl", url);
+                      });
+                    }
+                  }}
+                >
+                  <div className="flex flex-col items-center gap-2">
+                    <Camera className="w-8 h-8 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">
+                      {tagPhotoFile ? tagPhotoFile.name : form.watch("tagPhotoFileName") || "Click to choose or drag & drop"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Max 10MB</p>
+                  </div>
+                  <input
+                    id="vehicle-photo-input"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) {
+                        setTagPhotoFile(f);
+                        void readFileAsDataUrl(f).then((url) => {
+                          form.setValue("tagPhotoFileName", f.name);
+                          form.setValue("tagPhotoDataUrl", url);
+                        });
+                      }
+                    }}
+                  />
+                </div>
+                {form.watch("tagPhotoDataUrl") && (
+                  <div className="mt-2">
+                    <img 
+                      src={form.watch("tagPhotoDataUrl")} 
+                      alt="Vehicle preview" 
+                      className="h-20 w-20 object-cover rounded-lg border" 
+                    />
+                  </div>
+                )}
               </div>
 
               <DialogFooter>
@@ -693,9 +875,21 @@ export default function Vehicles() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Assigned To</FormLabel>
-                      <FormControl>
-                        <Input placeholder="Optional" {...field} />
-                      </FormControl>
+                      <Select value={field.value || "none"} onValueChange={(value) => field.onChange(value === "none" ? "" : value)}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select employee" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="none">None</SelectItem>
+                          {employees.map((emp) => (
+                            <SelectItem key={emp.id} value={emp.name}>
+                              {emp.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -756,6 +950,60 @@ export default function Vehicles() {
                     </FormItem>
                   )}
                 />
+              </div>
+
+              {/* Vehicle Photo Upload - Edit */}
+              <div className="space-y-2">
+                <FormLabel>Vehicle Photo</FormLabel>
+                <div
+                  className="w-full rounded-lg border border-dashed border-border p-4 text-center cursor-pointer hover:bg-muted/50 transition-colors"
+                  onClick={() => document.getElementById("edit-vehicle-photo-input")?.click()}
+                  onDragOver={(e) => { e.preventDefault(); }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    const f = e.dataTransfer.files?.[0];
+                    if (f) {
+                      setEditTagPhotoFile(f);
+                      void readFileAsDataUrl(f).then((url) => {
+                        editForm.setValue("tagPhotoFileName", f.name);
+                        editForm.setValue("tagPhotoDataUrl", url);
+                      });
+                    }
+                  }}
+                >
+                  <div className="flex flex-col items-center gap-2">
+                    <Camera className="w-8 h-8 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">
+                      {editTagPhotoFile ? editTagPhotoFile.name : editForm.watch("tagPhotoFileName") || "Click to choose or drag & drop"}
+                    </p>
+                    <p className="text-xs text-muted-foreground">Max 10MB</p>
+                  </div>
+                  <input
+                    id="edit-vehicle-photo-input"
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) {
+                        setEditTagPhotoFile(f);
+                        void readFileAsDataUrl(f).then((url) => {
+                          editForm.setValue("tagPhotoFileName", f.name);
+                          editForm.setValue("tagPhotoDataUrl", url);
+                        });
+                      }
+                    }}
+                  />
+                </div>
+                {editForm.watch("tagPhotoDataUrl") && (
+                  <div className="mt-2">
+                    <img 
+                      src={editForm.watch("tagPhotoDataUrl")} 
+                      alt="Vehicle preview" 
+                      className="h-20 w-20 object-cover rounded-lg border" 
+                    />
+                  </div>
+                )}
               </div>
 
               <DialogFooter>
@@ -866,11 +1114,12 @@ export default function Vehicles() {
               <div className="flex items-center gap-4">
                 {(() => {
                   const photoSrc = getVehicleTagPhotoSrc(vehicle);
+                  console.log(`[DEBUG CARD] ${vehicle.name} (${vehicle.id}): photoSrc =`, photoSrc ? photoSrc.substring(0, 50) + "..." : "null");
                   return photoSrc ? (
-                    <img src={photoSrc} alt={vehicle.name} className="w-12 h-12 rounded-xl object-cover ring-2 ring-primary/20" />
+                    <img src={photoSrc} alt={vehicle.name} className="h-12 w-12 rounded-xl object-cover ring-2 ring-primary/20" />
                   ) : (
-                    <div className="w-12 h-12 rounded-xl bg-primary/10 text-primary flex items-center justify-center">
-                      <Car className="w-6 h-6" />
+                    <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-primary/10 to-primary/5 flex items-center justify-center ring-2 ring-primary/20">
+                      <Car className="w-6 h-6 text-primary" />
                     </div>
                   );
                 })()}

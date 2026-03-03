@@ -14,6 +14,7 @@ type SettingsItem = {
   phone: string;
   role: string;
   avatarUrl?: string;
+  avatarDataUrl?: string;
   notifications?: {
     emailNotifications?: boolean;
     taskAlerts?: boolean;
@@ -61,7 +62,7 @@ export default function Settings() {
       const token = auth.token;
       
       // Use full backend URL for file upload
-      const API_BASE = "http://localhost:5000";
+      const API_BASE = "https://task-manager-backend-theta-ten.vercel.app";
       
       const res = await fetch(`${API_BASE}/api/settings/avatar`, {
         method: "POST",
@@ -173,8 +174,9 @@ export default function Settings() {
       onSuccess: (data) => {
         void queryClient.invalidateQueries({ queryKey: ["settings"] });
         toast({ title: "Success", description: "Profile picture updated." });
-        if (data.avatarUrl) {
-          setDraft((p: any) => ({ ...p, avatarUrl: data.avatarUrl }));
+        const newAvatarUrl = data.avatarDataUrl || data.avatarUrl;
+        if (newAvatarUrl) {
+          setDraft((p: any) => ({ ...p, avatarUrl: newAvatarUrl }));
         }
       },
       onError: (err) => {

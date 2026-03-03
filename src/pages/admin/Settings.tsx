@@ -78,7 +78,7 @@ export default function Settings() {
     console.log("Admin auth state:", auth);
     console.log("Token:", token);
 
-    const API_BASE = "http://localhost:5000";
+    const API_BASE = "https://task-manager-backend-theta-ten.vercel.app";
 
     try {
       const res = await fetch(`${API_BASE}/api/settings/avatar`, {
@@ -92,8 +92,9 @@ export default function Settings() {
       if (!res.ok) throw new Error("Upload failed");
 
       const data = await res.json();
-      if (data.avatarUrl) {
-        setSettings((prev) => ({ ...prev, avatarUrl: data.avatarUrl }));
+      if (data.avatarDataUrl || data.avatarUrl) {
+        const newAvatarUrl = data.avatarDataUrl || data.avatarUrl;
+        setSettings((prev) => ({ ...prev, avatarUrl: newAvatarUrl }));
       }
       await backendSettingsQuery.refetch();
     } catch (err) {
@@ -124,6 +125,7 @@ export default function Settings() {
           fullName?: string;
           email?: string;
           avatarUrl?: string;
+          avatarDataUrl?: string;
         };
       }>("/api/settings");
     },
@@ -143,7 +145,11 @@ export default function Settings() {
         typeof item.autoLogoutMinutes === "number" ? item.autoLogoutMinutes : prev.autoLogoutMinutes,
       fullName: typeof item.fullName === "string" ? item.fullName : prev.fullName,
       email: typeof item.email === "string" ? item.email : prev.email,
-      avatarUrl: typeof item.avatarUrl === "string" ? item.avatarUrl : prev.avatarUrl,
+      avatarUrl: typeof item.avatarDataUrl === "string" && item.avatarDataUrl
+        ? item.avatarDataUrl
+        : typeof item.avatarUrl === "string"
+          ? item.avatarUrl
+          : prev.avatarUrl,
     }));
   }, [backendSettingsQuery.data]);
 
