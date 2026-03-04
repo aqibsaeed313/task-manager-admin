@@ -70,7 +70,7 @@ interface Appliance {
   location: string;
   purchaseDate: string;
   warrantyUntil: string;
-  status: "active" | "inactive";
+  status: "operational" | "needs-repair" | "out-of-service";
   assignedTo?: string;
   tagPhotoFileName?: string;
   tagPhotoDataUrl?: string;
@@ -84,6 +84,7 @@ type ApplianceApi = {
   location?: string;
   purchaseDate?: string;
   warrantyUntil?: string;
+  warrantyExpiry?: string;
   status?: string;
   assignedTo?: string;
   tagPhotoFileName?: string;
@@ -92,28 +93,35 @@ type ApplianceApi = {
 
 function normalizeAppliance(a: ApplianceApi): Appliance {
   const id = String(a.id || a._id || "");
+  const backendStatus = String(a.status || "operational");
+  let normalizedStatus: "operational" | "needs-repair" | "out-of-service" = "operational";
+  if (backendStatus === "needs-repair" || backendStatus === "out-of-service") {
+    normalizedStatus = backendStatus;
+  }
   return {
     id,
     name: String(a.name || ""),
     type: (String(a.type || "commercial") === "residential" ? "residential" : "commercial"),
     location: String(a.location || ""),
     purchaseDate: String(a.purchaseDate || ""),
-    warrantyUntil: String(a.warrantyUntil || ""),
-    status: (String(a.status || "active") === "inactive" ? "inactive" : "active"),
-    assignedTo: a.assignedTo ? String(a.assignedTo) : undefined,
-    tagPhotoFileName: a.tagPhotoFileName ? String(a.tagPhotoFileName) : undefined,
-    tagPhotoDataUrl: a.tagPhotoDataUrl ? String(a.tagPhotoDataUrl) : undefined,
+    warrantyUntil: String(a.warrantyExpiry || a.warrantyUntil || ""),
+    status: normalizedStatus,
+    assignedTo: String(a.assignedTo || ""),
+    tagPhotoFileName: String(a.tagPhotoFileName || ""),
+    tagPhotoDataUrl: String(a.tagPhotoDataUrl || ""),
   };
 }
 
 const statusStyles = {
-  active: "bg-success/10 text-success",
-  inactive: "bg-muted text-muted-foreground",
+  operational: "bg-success/10 text-success",
+  "needs-repair": "bg-warning/10 text-warning",
+  "out-of-service": "bg-destructive/10 text-destructive",
 } as const;
 
 const statusIcons = {
-  active: CheckCircle2,
-  inactive: AlertCircle,
+  operational: CheckCircle2,
+  "needs-repair": AlertCircle,
+  "out-of-service": AlertCircle,
 } as const;
 
 const createApplianceSchema = z.object({
@@ -122,7 +130,7 @@ const createApplianceSchema = z.object({
   location: z.string().min(1, "Location is required"),
   purchaseDate: z.string().optional(),
   warrantyUntil: z.string().optional(),
-  status: z.enum(["active", "inactive"]),
+  status: z.enum(["operational", "needs-repair", "out-of-service"]),
   assignedTo: z.string().optional(),
   tagPhotoFileName: z.string().optional(),
   tagPhotoDataUrl: z.string().optional(),
@@ -315,7 +323,7 @@ export default function Appliances() {
     defaultValues: {
       name: "",
       type: "commercial",
-      status: "active",
+      status: "operational",
       location: "",
       purchaseDate: "",
       warrantyUntil: "",
@@ -330,7 +338,7 @@ export default function Appliances() {
     defaultValues: {
       name: "",
       type: "commercial",
-      status: "active",
+      status: "operational",
       location: "",
       purchaseDate: "",
       warrantyUntil: "",
@@ -481,8 +489,8 @@ export default function Appliances() {
     });
   }, [appliances, searchQuery, statusFilter, typeFilter]);
 
-  const activeCount = useMemo(() => appliances.filter((a) => a.status === "active").length, [appliances]);
-  const inactiveCount = useMemo(() => appliances.filter((a) => a.status === "inactive").length, [appliances]);
+  const operationalCount = useMemo(() => appliances.filter((a) => a.status === "operational").length, [appliances]);
+  const needsRepairCount = useMemo(() => appliances.filter((a) => a.status === "needs-repair").length, [appliances]);
 
   return (
     <motion.div
@@ -572,8 +580,9 @@ export default function Appliances() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">All Status</SelectItem>
-                <SelectItem value="active">Active</SelectItem>
-                <SelectItem value="inactive">Inactive</SelectItem>
+                <SelectItem value="operational">Operational</SelectItem>
+                <SelectItem value="needs-repair">Needs Repair</SelectItem>
+                <SelectItem value="out-of-service">Out of Service</SelectItem>
               </SelectContent>
             </Select>
           </motion.div>
@@ -938,7 +947,7 @@ export default function Appliances() {
               animate={{ scale: [1, 1.2, 1] }}
               transition={{ duration: 2, repeat: Infinity }}
             />
-            {activeCount} active
+            {operationalCount} operational
           </motion.span>
           <motion.span 
             variants={itemVariants}
@@ -949,7 +958,7 @@ export default function Appliances() {
               animate={{ scale: [1, 1.2, 1] }}
               transition={{ duration: 2, repeat: Infinity, delay: 0.5 }}
             />
-            {inactiveCount} inactive
+            {needsRepairCount} needs repair
           </motion.span>
         </motion.div>
       </motion.div>
@@ -1016,8 +1025,9 @@ export default function Appliances() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="active">Active</SelectItem>
-                          <SelectItem value="inactive">Inactive</SelectItem>
+                          <SelectItem value="operational">Operational</SelectItem>
+                          <SelectItem value="needs-repair">Needs Repair</SelectItem>
+                          <SelectItem value="out-of-service">Out of Service</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
@@ -1335,8 +1345,9 @@ export default function Appliances() {
                           </SelectTrigger>
                         </FormControl>
                         <SelectContent>
-                          <SelectItem value="active">Active</SelectItem>
-                          <SelectItem value="inactive">Inactive</SelectItem>
+                          <SelectItem value="operational">Operational</SelectItem>
+                          <SelectItem value="needs-repair">Needs Repair</SelectItem>
+                          <SelectItem value="out-of-service">Out of Service</SelectItem>
                         </SelectContent>
                       </Select>
                       <FormMessage />
