@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, type Variants } from "framer-motion";
 import { AdminLayout } from "@/components/admin/layout/AdminLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/admin/ui/card";
 import { Button } from "@/components/admin/ui/button";
@@ -49,12 +49,14 @@ import {
   User,
   Calendar,
   FileText,
+  Printer,
   AlertTriangle,
   CheckCircle2,
   AlertCircle,
   Sparkles,
   Users,
 } from "lucide-react";
+import jsPDF from "jspdf";
 import { apiFetch, createResource, deleteResource, listResource, updateResource } from "@/lib/admin/apiClient";
 
 interface Task {
@@ -71,6 +73,12 @@ interface Task {
   createdAt: string;
   attachmentFileName?: string;
   attachmentNote?: string;
+  attachment?: {
+    fileName: string;
+    url: string;
+    mimeType: string;
+    size: number;
+  };
 }
 
 interface Employee {
@@ -112,7 +120,7 @@ const statusClasses = {
 };
 
 // Animation variants
-const containerVariants = {
+const containerVariants: Variants = {
   hidden: { opacity: 0 },
   visible: {
     opacity: 1,
@@ -123,26 +131,26 @@ const containerVariants = {
   },
 };
 
-const itemVariants = {
+const itemVariants: Variants = {
   hidden: { y: 20, opacity: 0 },
   visible: {
     y: 0,
     opacity: 1,
     transition: {
-      type: "spring",
+      type: "spring" as const,
       stiffness: 100,
       damping: 12,
     },
   },
 };
 
-const cardVariants = {
+const cardVariants: Variants = {
   hidden: { scale: 0.95, opacity: 0 },
   visible: {
     scale: 1,
     opacity: 1,
     transition: {
-      type: "spring",
+      type: "spring" as const,
       stiffness: 100,
       damping: 15,
     },
@@ -151,7 +159,7 @@ const cardVariants = {
     scale: 1.02,
     boxShadow: "0 20px 25px -5px rgba(59, 130, 246, 0.1), 0 10px 10px -5px rgba(59, 130, 246, 0.04)",
     transition: {
-      type: "spring",
+      type: "spring" as const,
       stiffness: 400,
       damping: 17,
     },
@@ -313,6 +321,7 @@ const Tasks = () => {
         attachmentNote: formData.attachmentNote || "",
       };
       if (attachmentFile) {
+        console.log("Uploading file:", attachmentFile.name, "Size:", attachmentFile.size);
         const fd = new FormData();
         fd.append("title", formData.title);
         fd.append("description", formData.description);
@@ -327,10 +336,16 @@ const Tasks = () => {
         fd.append("attachmentNote", formData.attachmentNote);
         fd.append("file", attachmentFile);
 
-        await apiFetch<{ item: Task }>("/api/tasks/upload", {
-          method: "POST",
-          body: fd,
-        });
+        try {
+          const response = await apiFetch<{ item: Task }>("/api/tasks/upload", {
+            method: "POST",
+            body: fd,
+          });
+          console.log("Upload response:", response);
+        } catch (uploadErr) {
+          console.error("Upload failed:", uploadErr);
+          throw new Error("File upload failed: " + (uploadErr instanceof Error ? uploadErr.message : "Unknown error"));
+        }
       } else {
         await createResource<Task>("tasks", newTask);
       }
@@ -473,6 +488,131 @@ const Tasks = () => {
     }
   };
 
+  const handlePrintTask = async (task: Task) => {
+    try {
+      const doc = new jsPDF({ orientation: "p", unit: "pt", format: "a4" });
+
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 36;
+      const maxWidth = pageWidth - margin * 2;
+
+      let y = margin;
+
+      const addHeading = (text: string) => {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(16);
+        const lines = doc.splitTextToSize(text || "—", maxWidth);
+        doc.text(lines, margin, y);
+        y += lines.length * 18 + 6;
+      };
+
+      const addLabelValue = (label: string, value: string) => {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.text(`${label}:`, margin, y);
+        doc.setFont("helvetica", "normal");
+        const valLines = doc.splitTextToSize(value || "—", maxWidth - 80);
+        doc.text(valLines, margin + 80, y);
+        y += valLines.length * 14 + 6;
+      };
+
+      const ensureSpace = (needed: number) => {
+        if (y + needed <= pageHeight - margin) return;
+        doc.addPage();
+        y = margin;
+      };
+
+      addHeading(task.title || "Task");
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+      doc.text(`Assigned to: ${task.assignee || "—"}`, margin, y);
+      y += 18;
+
+      ensureSpace(120);
+      addLabelValue("Status", task.status || "—");
+      addLabelValue("Priority", task.priority || "—");
+      addLabelValue("Due Date", toDateOnly(task.dueDate) || "—");
+      addLabelValue("Due Time", task.dueTime || "—");
+      addLabelValue("Location", task.location || "—");
+
+      ensureSpace(80);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.text("Description", margin, y);
+      y += 14;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+      const descLines = doc.splitTextToSize(task.description || "—", maxWidth);
+      doc.text(descLines, margin, y);
+      y += descLines.length * 14 + 12;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      ensureSpace(30);
+      doc.text("Attachment", margin, y);
+      y += 14;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+
+      const attUrl = String(task.attachment?.url || "").trim();
+      const attMime = String(task.attachment?.mimeType || "").trim();
+      const attIsImage = !!attUrl && (attMime.startsWith("image/") || attUrl.startsWith("data:image/"));
+      const attName = task.attachment?.fileName || task.attachmentFileName || "";
+
+      if (attIsImage) {
+        const img = new Image();
+        img.src = attUrl;
+        await new Promise<void>((resolve) => {
+          if (img.complete) return resolve();
+          img.onload = () => resolve();
+          img.onerror = () => resolve();
+        });
+
+        const imgW = img.naturalWidth || 1;
+        const imgH = img.naturalHeight || 1;
+
+        const renderW = maxWidth;
+        const renderH = (imgH / imgW) * renderW;
+
+        ensureSpace(Math.min(renderH + 10, pageHeight - margin * 2));
+
+        const type = attMime.includes("png") || attUrl.startsWith("data:image/png") ? "PNG" : "JPEG";
+        doc.addImage(attUrl, type as any, margin, y, renderW, renderH);
+        y += renderH + 10;
+      } else if (attName) {
+        const attLines = doc.splitTextToSize(attName, maxWidth);
+        doc.text(attLines, margin, y);
+        y += attLines.length * 14 + 6;
+      } else {
+        doc.text("—", margin, y);
+        y += 18;
+      }
+
+      if (task.attachmentNote) {
+        ensureSpace(40);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12);
+        doc.text("Attachment Note", margin, y);
+        y += 14;
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(11);
+        const noteLines = doc.splitTextToSize(task.attachmentNote, maxWidth);
+        doc.text(noteLines, margin, y);
+        y += noteLines.length * 14 + 6;
+      }
+
+      const safeName = String(task.title || "task")
+        .trim()
+        .replace(/[\\/:*?\"<>|]+/g, "-")
+        .slice(0, 80);
+      doc.save(`${safeName || "task"}.pdf`);
+    } catch (e) {
+      console.error("PDF generation failed:", e);
+      setApiError(e instanceof Error ? e.message : "Failed to generate PDF");
+    }
+  };
+
   return (
     <AdminLayout>
       <motion.div 
@@ -486,7 +626,7 @@ const Tasks = () => {
           className="relative overflow-hidden rounded-xl bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-4 sm:p-6"
           variants={itemVariants}
           whileHover={{ scale: 1.01 }}
-          transition={{ type: "spring", stiffness: 300, damping: 20 }}
+          transition={{ type: "spring" as const, stiffness: 300, damping: 20 }}
         >
           <div className="absolute inset-0 bg-grid-white/10 [mask-image:radial-gradient(ellipse_at_center,white,transparent)]" />
           <div className="relative flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 sm:gap-6">
@@ -514,7 +654,7 @@ const Tasks = () => {
                   initial={{ opacity: 0, y: -20, height: 0 }}
                   animate={{ opacity: 1, y: 0, height: "auto" }}
                   exit={{ opacity: 0, y: -20, height: 0 }}
-                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                  transition={{ type: "spring" as const, stiffness: 500, damping: 30 }}
                   className="rounded-lg bg-destructive/10 p-3 sm:p-4 w-full sm:w-auto border border-destructive/20"
                 >
                   <p className="text-xs sm:text-sm text-destructive break-words flex items-center gap-2">
@@ -738,7 +878,6 @@ const Tasks = () => {
                   <motion.div
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
-                    className="w-full sm:w-auto"
                   >
                     <Button 
                       variant="outline" 
@@ -751,7 +890,6 @@ const Tasks = () => {
                   <motion.div
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
-                    className="w-full sm:w-auto"
                   >
                     <Button 
                       onClick={handleCreateTask} 
@@ -790,7 +928,7 @@ const Tasks = () => {
                     <motion.div 
                       className={`h-8 w-8 sm:h-10 sm:w-10 rounded-lg bg-${item.color}/10 flex items-center justify-center flex-shrink-0`}
                       whileHover={{ rotate: 10 }}
-                      transition={{ type: "spring", stiffness: 300, damping: 10 }}
+                      transition={{ type: "spring" as const, stiffness: 300, damping: 10 }}
                     >
                       <item.icon className={`h-4 w-4 sm:h-5 sm:w-5 text-${item.color}`} />
                     </motion.div>
@@ -889,7 +1027,7 @@ const Tasks = () => {
                 <div className="flex justify-center items-center py-8 sm:py-12">
                   <motion.div
                     animate={{ rotate: 360 }}
-                    transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+                    transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
                     className="h-8 w-8 border-2 border-primary border-t-transparent rounded-full"
                   />
                 </div>
@@ -940,6 +1078,10 @@ const Tasks = () => {
                                 <DropdownMenuItem onClick={() => handleViewDetails(task)}>
                                   <Eye className="mr-2 h-4 w-4" />
                                   View Details
+                                </DropdownMenuItem>
+                                <DropdownMenuItem onClick={() => void handlePrintTask(task)}>
+                                  <Printer className="mr-2 h-4 w-4" />
+                                  Print
                                 </DropdownMenuItem>
                                 <DropdownMenuItem onClick={() => handleEditTask(task)}>
                                   <Edit className="mr-2 h-4 w-4" />
@@ -1085,6 +1227,7 @@ const Tasks = () => {
                           <TableHead className="text-xs md:text-sm w-[10%]">Priority</TableHead>
                           <TableHead className="text-xs md:text-sm w-[10%]">Status</TableHead>
                           <TableHead className="text-xs md:text-sm w-[10%]">Due</TableHead>
+                          <TableHead className="text-right text-xs md:text-sm w-[10%]">Print</TableHead>
                           <TableHead className="text-right text-xs md:text-sm w-[10%]">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -1130,7 +1273,7 @@ const Tasks = () => {
                                 <div className="flex items-center gap-2">
                                   <motion.div
                                     whileHover={{ scale: 1.1, rotate: 5 }}
-                                    transition={{ type: "spring", stiffness: 300, damping: 10 }}
+                                    transition={{ type: "spring" as const, stiffness: 300, damping: 10 }}
                                   >
                                     <Avatar className="h-6 w-6 md:h-7 md:w-7 flex-shrink-0 ring-2 ring-primary/20">
                                       <AvatarFallback className="bg-gradient-to-br from-primary to-primary/60 text-white text-xs">
@@ -1180,6 +1323,22 @@ const Tasks = () => {
                                 <p className="text-xs text-muted-foreground">{toDateOnly(task.dueDate)}</p>
                               </TableCell>
                               <TableCell className="text-right">
+                                <motion.div whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="gap-2"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      void handlePrintTask(task);
+                                    }}
+                                  >
+                                    <Printer className="h-4 w-4" />
+                                    Print
+                                  </Button>
+                                </motion.div>
+                              </TableCell>
+                              <TableCell className="text-right">
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
                                     <motion.div
@@ -1195,6 +1354,10 @@ const Tasks = () => {
                                     <DropdownMenuItem onClick={() => handleViewDetails(task)}>
                                       <Eye className="mr-2 h-4 w-4" />
                                       View Details
+                                    </DropdownMenuItem>
+                                    <DropdownMenuItem onClick={() => void handlePrintTask(task)}>
+                                      <Printer className="mr-2 h-4 w-4" />
+                                      Print
                                     </DropdownMenuItem>
                                     <DropdownMenuItem onClick={() => handleEditTask(task)}>
                                       <Edit className="mr-2 h-4 w-4" />
@@ -1331,13 +1494,57 @@ const Tasks = () => {
                   whileHover={{ x: 5 }}
                 >
                   <label className="text-xs sm:text-sm font-medium">Attachment</label>
-                  <div className="bg-gradient-to-br from-muted/30 to-muted/10 p-2 sm:p-3 rounded-lg space-y-1">
-                    <p className="text-xs sm:text-sm text-muted-foreground break-words">
-                      {selectedTask.attachmentFileName ? selectedTask.attachmentFileName : "—"}
-                    </p>
+                  <div className="bg-gradient-to-br from-muted/30 to-muted/10 p-2 sm:p-3 rounded-lg space-y-2">
+                    {selectedTask.attachment?.url ? (
+                      <>
+                        {/* Image Preview */}
+                        {selectedTask.attachment.mimeType?.startsWith("image/") ? (
+                          <div className="w-full overflow-hidden rounded-lg border bg-white">
+                            <img
+                              src={selectedTask.attachment.url}
+                              alt={selectedTask.attachment.fileName || "Attachment"}
+                              className="w-full h-auto max-h-64 object-contain"
+                            />
+                          </div>
+                        ) : null}
+                        
+                        {/* File Info & Download */}
+                        <div className="flex items-center gap-3 p-2 bg-white/50 rounded-lg">
+                          <FileText className="h-8 w-8 text-primary flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-xs sm:text-sm font-medium truncate">
+                              {selectedTask.attachment.fileName || selectedTask.attachmentFileName || "Attachment"}
+                            </p>
+                            {selectedTask.attachment.size > 0 && (
+                              <p className="text-xs text-muted-foreground">
+                                {(selectedTask.attachment.size / 1024 / 1024).toFixed(2)} MB
+                              </p>
+                            )}
+                          </div>
+                          <a
+                            href={selectedTask.attachment.url}
+                            download={selectedTask.attachment.fileName}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
+                          >
+                            <Eye className="h-3 w-3" />
+                            View / Download
+                          </a>
+                        </div>
+                      </>
+                    ) : selectedTask.attachmentFileName ? (
+                      <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
+                        <FileText className="h-4 w-4" />
+                        <span>{selectedTask.attachmentFileName}</span>
+                      </div>
+                    ) : (
+                      <p className="text-xs sm:text-sm text-muted-foreground">—</p>
+                    )}
+                    
                     {selectedTask.attachmentNote && (
-                      <p className="text-xs sm:text-sm text-muted-foreground break-words">
-                        {selectedTask.attachmentNote}
+                      <p className="text-xs sm:text-sm text-muted-foreground break-words border-t pt-2 mt-2">
+                        <span className="font-medium">Note:</span> {selectedTask.attachmentNote}
                       </p>
                     )}
                   </div>
@@ -1666,7 +1873,7 @@ const Tasks = () => {
       </Dialog>
 
       {/* Add global styles for grid pattern */}
-      <style jsx global>{`
+      <style>{`
         .bg-grid-white {
           background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' width='32' height='32' fill='none' stroke='rgb(255 255 255 / 0.05)'%3e%3cpath d='M0 .5H31.5V32'/%3e%3c/svg%3e");
         }

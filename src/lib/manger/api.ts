@@ -28,6 +28,20 @@ export async function apiFetch<T>(
 
   const token = getStoredToken();
 
+  const isFormData =
+    typeof FormData !== "undefined" &&
+    !!options.body &&
+    options.body instanceof FormData;
+
+  const headers: Record<string, string> = {
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...((options.headers as Record<string, string> | undefined) || {}),
+  };
+
+  if (!isFormData) {
+    headers["Content-Type"] = headers["Content-Type"] || "application/json";
+  }
+
   const res = await fetch(url, {
     ...options,
     headers: {

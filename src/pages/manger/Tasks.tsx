@@ -54,10 +54,13 @@ import {
   MoreHorizontal,
   Calendar,
   MapPin,
+  FileText,
+  Printer,
 } from "lucide-react";
 import { cn } from "@/lib/manger/utils";
 import { apiFetch } from "@/lib/manger/api";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import jsPDF from "jspdf";
 
 interface Task {
   id: string;
@@ -69,6 +72,14 @@ interface Task {
   dueDate: string;
   location: string;
   createdAt: string;
+  attachmentFileName?: string;
+  attachmentNote?: string;
+  attachment?: {
+    fileName: string;
+    url: string;
+    mimeType: string;
+    size: number;
+  };
 }
 
 type TaskApi = Omit<Task, "id"> & {
@@ -86,6 +97,9 @@ function normalizeTask(t: TaskApi): Task {
     dueDate: t.dueDate,
     location: t.location,
     createdAt: t.createdAt,
+    attachmentFileName: (t as any).attachmentFileName,
+    attachmentNote: (t as any).attachmentNote,
+    attachment: (t as any).attachment,
   };
 }
 
@@ -122,6 +136,8 @@ export default function Tasks() {
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
+  const [attachmentNoteDraft, setAttachmentNoteDraft] = useState<string>("");
   const queryClient = useQueryClient();
 
   const tasksQuery = useQuery({
@@ -198,12 +214,53 @@ export default function Tasks() {
   const onCreateTask = (values: CreateTaskValues) => {
     const now = new Date();
 
+    if (attachmentFile) {
+      const fd = new FormData();
+      fd.append("title", values.title);
+      fd.append("description", values.description);
+      fd.append("assignee", values.assignee);
+      fd.append("priority", values.priority);
+      fd.append("status", values.status);
+      fd.append("dueDate", values.dueDate);
+      fd.append("location", values.location);
+      fd.append("createdAt", now.toISOString().slice(0, 10));
+      fd.append("attachmentFileName", attachmentFile.name);
+      fd.append("attachmentNote", attachmentNoteDraft);
+      fd.append("file", attachmentFile);
+
+      void apiFetch<{ item: TaskApi }>("/api/tasks/upload", {
+        method: "POST",
+        body: fd,
+      })
+        .then(async () => {
+          await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+          setIsCreateOpen(false);
+          form.reset();
+          setAttachmentFile(null);
+          setAttachmentNoteDraft("");
+          toast({
+            title: "Task created",
+            description: "Your task has been added to the list.",
+          });
+        })
+        .catch((err) => {
+          toast({
+            title: "Failed to create task",
+            description: err instanceof Error ? err.message : "Something went wrong",
+            variant: "destructive",
+          });
+        });
+      return;
+    }
+
     createTaskMutation.mutate(
       { ...values, createdAt: now.toISOString().slice(0, 10) },
       {
         onSuccess: () => {
           setIsCreateOpen(false);
           form.reset();
+          setAttachmentFile(null);
+          setAttachmentNoteDraft("");
           toast({
             title: "Task created",
             description: "Your task has been added to the list.",
@@ -241,6 +298,132 @@ export default function Tasks() {
   const openDelete = (task: Task) => {
     setSelectedTask(task);
     setIsDeleteOpen(true);
+  };
+
+  const handlePrintTask = async (task: Task) => {
+    try {
+      const doc = new jsPDF({ orientation: "p", unit: "pt", format: "a4" });
+
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 36;
+      const maxWidth = pageWidth - margin * 2;
+
+      let y = margin;
+
+      const addHeading = (text: string) => {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(16);
+        const lines = doc.splitTextToSize(text || "—", maxWidth);
+        doc.text(lines, margin, y);
+        y += lines.length * 18 + 6;
+      };
+
+      const addLabelValue = (label: string, value: string) => {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(11);
+        doc.text(`${label}:`, margin, y);
+        doc.setFont("helvetica", "normal");
+        const valLines = doc.splitTextToSize(value || "—", maxWidth - 80);
+        doc.text(valLines, margin + 80, y);
+        y += valLines.length * 14 + 6;
+      };
+
+      const ensureSpace = (needed: number) => {
+        if (y + needed <= pageHeight - margin) return;
+        doc.addPage();
+        y = margin;
+      };
+
+      addHeading(task.title || "Task");
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+      doc.text(`Assigned to: ${task.assignee || "—"}`, margin, y);
+      y += 18;
+
+      ensureSpace(120);
+      addLabelValue("Status", task.status || "—");
+      addLabelValue("Priority", task.priority || "—");
+      addLabelValue("Due Date", task.dueDate ? new Date(task.dueDate).toLocaleDateString() : "—");
+      addLabelValue("Location", task.location || "—");
+      addLabelValue("Created", task.createdAt ? new Date(task.createdAt).toLocaleDateString() : "—");
+
+      ensureSpace(80);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.text("Description", margin, y);
+      y += 14;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+      const descLines = doc.splitTextToSize(task.description || "—", maxWidth);
+      doc.text(descLines, margin, y);
+      y += descLines.length * 14 + 12;
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      ensureSpace(30);
+      doc.text("Attachment", margin, y);
+      y += 14;
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+
+      const attUrl = String(task.attachment?.url || "").trim();
+      const attMime = String(task.attachment?.mimeType || "").trim();
+      const attIsImage = !!attUrl && (attMime.startsWith("image/") || attUrl.startsWith("data:image/"));
+      const attName = task.attachment?.fileName || task.attachmentFileName || "";
+
+      if (attIsImage) {
+        const img = new Image();
+        img.src = attUrl;
+        await new Promise<void>((resolve) => {
+          if (img.complete) return resolve();
+          img.onload = () => resolve();
+          img.onerror = () => resolve();
+        });
+
+        const imgW = img.naturalWidth || 1;
+        const imgH = img.naturalHeight || 1;
+        const renderW = maxWidth;
+        const renderH = (imgH / imgW) * renderW;
+        ensureSpace(Math.min(renderH + 10, pageHeight - margin * 2));
+        const type = attMime.includes("png") || attUrl.startsWith("data:image/png") ? "PNG" : "JPEG";
+        doc.addImage(attUrl, type as any, margin, y, renderW, renderH);
+        y += renderH + 10;
+      } else if (attName) {
+        const attLines = doc.splitTextToSize(attName, maxWidth);
+        doc.text(attLines, margin, y);
+        y += attLines.length * 14 + 6;
+      } else {
+        doc.text("—", margin, y);
+        y += 18;
+      }
+
+      if (task.attachmentNote) {
+        ensureSpace(40);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(12);
+        doc.text("Attachment Note", margin, y);
+        y += 14;
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(11);
+        const noteLines = doc.splitTextToSize(task.attachmentNote, maxWidth);
+        doc.text(noteLines, margin, y);
+        y += noteLines.length * 14 + 6;
+      }
+
+      const safeName = String(task.title || "task")
+        .trim()
+        .replace(/[\\/:*?\"<>|]+/g, "-")
+        .slice(0, 80);
+      doc.save(`${safeName || "task"}.pdf`);
+    } catch (e) {
+      console.error("PDF generation failed:", e);
+      toast({
+        title: "Failed to generate PDF",
+        description: e instanceof Error ? e.message : "Something went wrong",
+        variant: "destructive",
+      });
+    }
   };
 
   const onEditTask = (values: CreateTaskValues) => {
@@ -316,19 +499,14 @@ export default function Tasks() {
       </div>
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
-        <DialogContent className="w-[95vw] sm:max-w-[700px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="w-[95vw] sm:max-w-[620px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Create Task</DialogTitle>
-            <DialogDescription>
-              Add a new task and assign it to a team member.
-            </DialogDescription>
+            <DialogDescription>Add a task and assign it.</DialogDescription>
           </DialogHeader>
 
           <Form {...form}>
-            <form
-              onSubmit={form.handleSubmit(onCreateTask)}
-              className="space-y-4"
-            >
+            <form onSubmit={form.handleSubmit(onCreateTask)} className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <FormField
                   control={form.control}
@@ -455,13 +633,62 @@ export default function Tasks() {
                     </FormItem>
                   )}
                 />
+
+                <div className="sm:col-span-2 space-y-2">
+                  <FormLabel>Attachment</FormLabel>
+                  <div
+                    className="rounded-lg border bg-muted/20 p-3 flex items-center justify-between gap-3 cursor-pointer"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      const el = document.getElementById("manager-task-attachment-input") as HTMLInputElement | null;
+                      el?.click();
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        const el = document.getElementById("manager-task-attachment-input") as HTMLInputElement | null;
+                        el?.click();
+                      }
+                    }}
+                  >
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {attachmentFile ? attachmentFile.name : "Click to choose a file"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">Max 10MB</p>
+                    </div>
+                    <FileText className="w-4 h-4 text-muted-foreground shrink-0" />
+                    <input
+                      id="manager-task-attachment-input"
+                      type="file"
+                      className="hidden"
+                      onChange={(e) => {
+                        const f = e.target.files?.[0] || null;
+                        setAttachmentFile(f);
+                      }}
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <FormLabel>Attachment Note</FormLabel>
+                    <Input
+                      value={attachmentNoteDraft}
+                      onChange={(e) => setAttachmentNoteDraft(e.target.value)}
+                      placeholder="e.g., before/after photo"
+                    />
+                  </div>
+                </div>
               </div>
 
               <DialogFooter className="flex-col sm:flex-row gap-2">
                 <Button
                   type="button"
                   variant="outline"
-                  onClick={() => setIsCreateOpen(false)}
+                  onClick={() => {
+                    setIsCreateOpen(false);
+                    setAttachmentFile(null);
+                    setAttachmentNoteDraft("");
+                  }}
                   className="w-full sm:w-auto"
                 >
                   Cancel
@@ -523,9 +750,74 @@ export default function Tasks() {
                 </div>
               </div>
 
+              <div className="space-y-2">
+                <p className="text-muted-foreground text-sm">Attachment</p>
+                <div className="rounded-lg border bg-muted/20 p-3 space-y-2">
+                  {selectedTask.attachment?.url ? (
+                    <>
+                      {selectedTask.attachment.mimeType?.startsWith("image/") ? (
+                        <div className="w-full overflow-hidden rounded-lg border bg-background">
+                          <img
+                            src={selectedTask.attachment.url}
+                            alt={selectedTask.attachment.fileName || "Attachment"}
+                            className="w-full h-auto max-h-64 object-contain"
+                          />
+                        </div>
+                      ) : null}
+
+                      <div className="flex items-center gap-3 rounded-lg bg-background/60 p-2">
+                        <FileText className="h-8 w-8 text-primary shrink-0" />
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium truncate">
+                            {selectedTask.attachment.fileName || selectedTask.attachmentFileName || "Attachment"}
+                          </p>
+                          {selectedTask.attachment.size > 0 && (
+                            <p className="text-xs text-muted-foreground">
+                              {(selectedTask.attachment.size / 1024 / 1024).toFixed(2)} MB
+                            </p>
+                          )}
+                        </div>
+                        <a
+                          href={selectedTask.attachment.url}
+                          download={selectedTask.attachment.fileName}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium bg-primary text-primary-foreground rounded-md"
+                        >
+                          Download
+                        </a>
+                      </div>
+                    </>
+                  ) : selectedTask.attachmentFileName ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <FileText className="h-4 w-4" />
+                      <span className="break-words">{selectedTask.attachmentFileName}</span>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">—</p>
+                  )}
+
+                  {selectedTask.attachmentNote ? (
+                    <p className="text-xs text-muted-foreground border-t pt-2">
+                      <span className="font-medium">Note:</span> {selectedTask.attachmentNote}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+
               <DialogFooter>
                 <Button type="button" variant="outline" onClick={() => setIsViewOpen(false)}>
                   Close
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    if (!selectedTask) return;
+                    void handlePrintTask(selectedTask);
+                  }}
+                >
+                  Print
                 </Button>
                 <Button
                   type="button"
@@ -763,6 +1055,7 @@ export default function Tasks() {
                 <th>Status</th>
                 <th>Due Date</th>
                 <th>Location</th>
+                <th>Print</th>
                 <th className="w-12"></th>
               </tr>
             </thead>
@@ -821,6 +1114,18 @@ export default function Tasks() {
                     </div>
                   </td>
                   <td>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="gap-2 whitespace-nowrap"
+                      onClick={() => void handlePrintTask(task)}
+                    >
+                      <Printer className="w-4 h-4" />
+                      Print
+                    </Button>
+                  </td>
+                  <td>
                     <DropdownMenu>
                       <DropdownMenuTrigger asChild>
                         <button
@@ -833,6 +1138,9 @@ export default function Tasks() {
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem onClick={() => openView(task)}>
                           View Details
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => void handlePrintTask(task)}>
+                          Print
                         </DropdownMenuItem>
                         <DropdownMenuItem onClick={() => openEdit(task)}>
                           Edit
