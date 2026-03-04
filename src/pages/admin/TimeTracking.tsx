@@ -519,15 +519,15 @@ const TimeTracking = () => {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3 sm:space-y-4 px-4 sm:px-6 pb-5 sm:pb-6">
-            {/* Weekly Total */}
+     
             <div className="rounded-md border p-3 sm:p-4 bg-muted/10">
-              <p className="text-xs sm:text-sm text-muted-foreground">Weekly Total (filtered)</p>
-              <p className="text-xl sm:text-2xl font-bold text-accent">
+              <p className="text-xs sm:text-sm text-black">Weekly Total (filtered)</p>
+              <p className="text-xl sm:text-2xl font-bold text-black">
                 {formatDuration(reports.weeklyTotalMinutes)}
               </p>
             </div>
             
-            {/* Daily Totals */}
+      
             <div className="space-y-2">
               <p className="text-xs sm:text-sm font-medium text-muted-foreground">Daily Breakdown</p>
               {reports.daily.length === 0 ? (
@@ -549,7 +549,7 @@ const TimeTracking = () => {
           </CardContent>
         </Card>
 
-        {/* Filters Card - Responsive */}
+   
         <Card className="shadow-soft border-0 sm:border">
           <CardHeader className="px-4 sm:px-6 py-4 sm:py-5">
             <CardTitle className="text-base sm:text-lg md:text-xl font-semibold">
@@ -558,7 +558,7 @@ const TimeTracking = () => {
           </CardHeader>
           <CardContent className="space-y-4 sm:space-y-5 px-4 sm:px-6 pb-5 sm:pb-6">
             <div className="flex flex-col lg:flex-row gap-3 sm:gap-4">
-              {/* Search */}
+      
               <div className="relative flex-1">
                 <label className="block text-xs text-muted-foreground mb-1.5 lg:hidden">
                   Search
@@ -574,7 +574,7 @@ const TimeTracking = () => {
                 </div>
               </div>
 
-              {/* Date Range */}
+     
               <div className="flex flex-row gap-2 sm:gap-3 w-full lg:w-auto">
                 <div className="flex-1">
                   <label className="block text-xs text-muted-foreground mb-1.5 lg:hidden">
@@ -600,7 +600,6 @@ const TimeTracking = () => {
                 </div>
               </div>
 
-              {/* Status Filter */}
               <div className="w-full lg:w-48">
                 <label className="block text-xs text-muted-foreground mb-1.5 lg:hidden">
                   Status
@@ -620,7 +619,6 @@ const TimeTracking = () => {
           </CardContent>
         </Card>
 
-        {/* Summary Cards - Responsive Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
           <Card className="shadow-soft border-0 sm:border">
             <CardContent className="p-4 sm:p-6">

@@ -820,7 +820,7 @@ export default function DoNotHire() {
             </form>
           )}
           <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-3 mt-4 sm:mt-6">
-            <Button 
+            <Button  
               variant="outline" 
               onClick={() => setEditOpen(false)}
               className="w-full sm:w-auto order-2 sm:order-1"
