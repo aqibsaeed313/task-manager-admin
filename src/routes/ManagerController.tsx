@@ -8,6 +8,7 @@ import Tasks from "@/pages/manger/Tasks";
 import Employees from "@/pages/manger/Employees";
 import Scheduling from "@/pages/manger/Scheduling";
 import TimeTracking from "@/pages/manger/TimeTracking";
+import EmployeeTimeHistory from "@/pages/manger/EmployeeTimeHistory";
 import Vehicles from "@/pages/manger/Vehicles";
 import Appliances from "@/pages/manger/Appliances";
 console.log("Appliances import:", Appliances);
@@ -31,6 +32,7 @@ export default function ManagerController() {
       { path: "employees", element: <Employees /> },
       { path: "scheduling", element: <Scheduling /> },
       { path: "time-tracking", element: <TimeTracking /> },
+      { path: "time-tracking/history/:employee", element: <EmployeeTimeHistory /> },
       { path: "vehicles", element: <Vehicles /> },
       { path: "appliances", element: <Appliances /> },
       { path: "locations", element: <Locations /> },

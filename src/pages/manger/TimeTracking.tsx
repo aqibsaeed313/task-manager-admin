@@ -1,18 +1,11 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { Button } from "@/components/manger/ui/button";
-import { Input } from "@/components/manger/ui/input";
 import { Badge } from "@/components/manger/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/manger/ui/select";
-import { Search, Download, Clock, Calendar } from "lucide-react";
+import { Download, Clock, Calendar } from "lucide-react";
 import { cn } from "@/lib/manger/utils";
 import { apiFetch } from "@/lib/manger/api";
 import { useQuery } from "@tanstack/react-query";
+import { useNavigate } from "react-router-dom";
 
 interface TimeEntry {
   id: string;
@@ -53,8 +46,7 @@ const statusStyles = {
 };
 
 export default function TimeTracking() {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const navigate = useNavigate();
 
   const entriesQuery = useQuery({
     queryKey: ["time-entries"],
@@ -67,15 +59,12 @@ export default function TimeTracking() {
   const timeEntries = entriesQuery.data ?? [];
 
   const filteredEntries = useMemo(() => {
-    return timeEntries.filter((entry) => {
-      const matchesSearch = entry.employee
-        .toLowerCase()
-        .includes(searchQuery.toLowerCase());
-      const matchesStatus =
-        statusFilter === "all" || entry.status === statusFilter;
-      return matchesSearch && matchesStatus;
+    return timeEntries.slice().sort((a, b) => {
+      if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+      if (a.clockIn !== b.clockIn) return a.clockIn < b.clockIn ? 1 : -1;
+      return a.id < b.id ? 1 : -1;
     });
-  }, [timeEntries, searchQuery, statusFilter]);
+  }, [timeEntries]);
 
   const totalHours = filteredEntries.reduce((sum, e) => sum + e.totalHours, 0);
   const avgHours = (totalHours / filteredEntries.length || 0).toFixed(1);
@@ -148,30 +137,6 @@ export default function TimeTracking() {
         </div>
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search employee..."
-            className="pl-10"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-full sm:w-[160px]">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All Status</SelectItem>
-            <SelectItem value="complete">Complete</SelectItem>
-            <SelectItem value="incomplete">Incomplete</SelectItem>
-            <SelectItem value="overtime">Overtime</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
       {/* Time Entries Table */}
       <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
         {entriesQuery.isLoading ? (
@@ -203,6 +168,15 @@ export default function TimeTracking() {
                   key={entry.id}
                   className="animate-fade-in"
                   style={{ animationDelay: `${index * 30}ms` }}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => navigate(`history/${encodeURIComponent(entry.employee)}`)}
+                  onKeyDown={(ev) => {
+                    if (ev.key === "Enter" || ev.key === " ") {
+                      ev.preventDefault();
+                      navigate(`history/${encodeURIComponent(entry.employee)}`);
+                    }
+                  }}
                 >
                   <td>
                     <div className="flex items-center gap-3">

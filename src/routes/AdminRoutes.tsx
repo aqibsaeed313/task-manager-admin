@@ -12,6 +12,7 @@ import Locations from "@/pages/admin/Locations";
 import Vendors from "@/pages/admin/Vendors";
 import Scheduling from "@/pages/admin/Scheduling";
 import TimeTracking from "@/pages/admin/TimeTracking";
+import EmployeeTimeHistory from "@/pages/admin/EmployeeTimeHistory";
 import Messaging from "@/pages/admin/Messaging";
 import DoNotHire from "@/pages/admin/DoNotHire";
 import Onboarding from "@/pages/admin/Onboarding";
@@ -38,6 +39,7 @@ export default function AdminRoutes() {
       { path: "vendors", element: <Vendors /> },
       { path: "scheduling", element: <Scheduling /> },
       { path: "time-tracking", element: <TimeTracking /> },
+      { path: "time-tracking/history/:employee", element: <EmployeeTimeHistory /> },
       { path: "messaging", element: <Messaging /> },
       { path: "do-not-hire", element: <DoNotHire /> },
       { path: "onboarding", element: <Onboarding /> },
