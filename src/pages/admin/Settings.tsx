@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { AdminLayout } from "@/components/admin/layout/AdminLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/admin/ui/card";
 import { Button } from "@/components/admin/ui/button";
@@ -76,11 +76,11 @@ export default function Settings() {
 
     const auth = getAuthState();
     const token = auth.token;
-    
+
     console.log("Admin auth state:", auth);
     console.log("Token:", token);
 
-    const API_BASE = "https://task-manager-backend-theta-ten.vercel.app";
+    const API_BASE = "https://task.se7eninc.com";
 
     try {
       const res = await fetch(`${API_BASE}/api/settings/avatar`, {
@@ -226,7 +226,7 @@ export default function Settings() {
     <AdminLayout>
       {/* Mobile-first container */}
       <div className="space-y-4 sm:space-y-5 md:space-y-6 px-2 sm:px-0">
-        
+
         {/* Page Header - Responsive */}
         <div className="space-y-1.5 sm:space-y-2">
           <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight">
@@ -239,7 +239,7 @@ export default function Settings() {
 
         {/* Settings Grid - Responsive */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 md:gap-6">
-          
+
           {/* Profile Card */}
           <Card className="shadow-soft border-0 sm:border">
             <CardHeader className="px-4 sm:px-6 py-4 sm:py-5">

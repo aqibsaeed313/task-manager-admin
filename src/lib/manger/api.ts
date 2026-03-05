@@ -23,7 +23,7 @@ export async function apiFetch<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const baseUrl = "https://task-manager-backend-theta-ten.vercel.app";
+  const baseUrl = "https://task.se7eninc.com";
   const url = `${String(baseUrl).replace(/\/$/, "")}${path}`;
 
   const token = getStoredToken();

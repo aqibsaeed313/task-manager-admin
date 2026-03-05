@@ -8,7 +8,7 @@ type ApiErrorBody = {
 
 export function getApiBaseUrl() {
   // Always use Vercel backend URL
-  return "https://task-manager-backend-theta-ten.vercel.app";
+  return "https://task.se7eninc.com";
 }
 
 async function parseJsonSafe(res: Response) {
@@ -22,7 +22,7 @@ async function parseJsonSafe(res: Response) {
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const baseUrl = "https://task-manager-backend-theta-ten.vercel.app";
+  const baseUrl = "https://task.se7eninc.com";
   const url = `${String(baseUrl).replace(/\/$/, "")}${path}`;
 
   const auth = getAuthState();

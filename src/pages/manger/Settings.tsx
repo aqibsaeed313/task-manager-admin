@@ -57,13 +57,13 @@ export default function Settings() {
     mutationFn: async (file: File) => {
       const formData = new FormData();
       formData.append("avatar", file);
-      
+
       const auth = getAuthState();
       const token = auth.token;
-      
+
       // Use full backend URL for file upload
-      const API_BASE = "https://task-manager-backend-theta-ten.vercel.app";
-      
+      const API_BASE = "https://task.se7eninc.com";
+
       const res = await fetch(`${API_BASE}/api/settings/avatar`, {
         method: "POST",
         body: formData,
@@ -71,7 +71,7 @@ export default function Settings() {
           Authorization: `Bearer ${token || ""}`,
         },
       });
-      
+
       if (!res.ok) {
         const errorData = await res.json().catch(() => ({ message: "Upload failed" }));
         throw new Error(errorData.error?.message || errorData.message || "Failed to upload avatar");
