@@ -1,10 +1,12 @@
+/* 1️⃣ Import fonts first */
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
+/* 2️⃣ Tailwind directives next */
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-
-
+/* 3️⃣ Custom base layer */
 @layer base {
   :root {
     --background: 210 20% 98%;
@@ -96,9 +98,7 @@
     --input: 217 33% 17%;
     --ring: 221 83% 53%;
   }
-}
 
-@layer base {
   * {
     @apply border-border;
   }
@@ -109,6 +109,7 @@
   }
 }
 
+/* Components Layer */
 @layer components {
   .stat-card {
     @apply bg-card rounded-xl p-6 border border-border shadow-[var(--shadow-card)] transition-all duration-200 hover:shadow-[var(--shadow-md)];
@@ -192,6 +193,7 @@
   }
 }
 
+/* Utilities Layer */
 @layer utilities {
   .no-scrollbar {
     -ms-overflow-style: none;
