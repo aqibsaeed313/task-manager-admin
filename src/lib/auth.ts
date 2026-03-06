@@ -1,6 +1,6 @@
-export type UserRole = "admin" | "manager";
+export type UserRole = "super-admin" | "admin" | "manager";
 
-export type Role = "admin" | "manager" | "employee";
+export type Role = "super-admin" | "admin" | "manager" | "employee";
 
 export type ModuleKey =
   | "dashboard"
@@ -40,6 +40,10 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
 };
 
 export const DEFAULT_PERMISSION_MATRIX: PermissionMatrix = {
+  "super-admin": Object.keys(MODULE_LABELS).reduce((acc, k) => {
+    acc[k as ModuleKey] = true;
+    return acc;
+  }, {} as Record<ModuleKey, boolean>),
   admin: Object.keys(MODULE_LABELS).reduce((acc, k) => {
     acc[k as ModuleKey] = true;
     return acc;
@@ -104,7 +108,10 @@ export function getAuthState(): AuthState {
     const parsed = JSON.parse(raw) as Partial<AuthState>;
     return {
       isAuthenticated: Boolean(parsed.isAuthenticated),
-      role: parsed.role === "admin" || parsed.role === "manager" ? parsed.role : null,
+      role:
+        parsed.role === "super-admin" || parsed.role === "admin" || parsed.role === "manager"
+          ? parsed.role
+          : null,
       username: typeof parsed.username === "string" ? parsed.username : null,
       token: typeof parsed.token === "string" ? parsed.token : null,
     };

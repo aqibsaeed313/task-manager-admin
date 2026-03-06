@@ -17,6 +17,7 @@ function normalizeRole(input: unknown): Role | null {
 
   const value = input.trim().toLowerCase();
   if (value === "administrator") return "admin";
+  if (value === "super-admin" || value === "superadmin") return "admin";
   if (value.includes("admin")) return "admin";
 
   return null;

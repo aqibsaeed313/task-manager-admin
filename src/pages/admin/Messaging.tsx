@@ -1,44 +1,31 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useRef } from "react";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/admin/ui/card";
 import { Button } from "@/components/admin/ui/button";
 import { Input } from "@/components/admin/ui/input";
 import { Badge } from "@/components/admin/ui/badge";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/admin/ui/table";
+import { Avatar, AvatarFallback } from "@/components/admin/ui/avatar";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/admin/ui/dialog";
-import { Plus, Search, Bell, MessageSquare, Send } from "lucide-react";
-import { apiFetch, createResource, listResource } from "@/lib/admin/apiClient";
+import { Plus, Search, Send, ArrowLeft, MessageCircle, User } from "lucide-react";
+import { apiFetch, listResource } from "@/lib/admin/apiClient";
 import { Textarea } from "@/components/admin/ui/textarea";
 import { cn } from "@/lib/utils";
 
-interface NotificationItem {
+interface Employee {
   id: string;
-  title: string;
-  message: string;
-  audience: "all" | "employees" | "managers";
-  createdAt: string;
+  _id?: string;
+  name: string;
+  initials: string;
+  email: string;
+  role: string;
+  department: string;
+  status: string;
 }
-
-const CHAT_SETTINGS_KEY = "taskflow_chat_settings";
-
-type ChatSettings = {
-  chatEnabled: boolean;
-};
 
 interface Message {
   id: string;
@@ -49,11 +36,24 @@ interface Message {
   timestamp: string;
   type: "direct" | "broadcast";
   status: "sent" | "delivered" | "read";
+  createdAt?: string;
 }
 
 type MessageApi = Omit<Message, "id"> & {
   _id: string;
 };
+
+interface ConversationFromApi {
+  employee: Employee;
+  lastMessage: Message | null;
+  unreadCount: number;
+}
+
+interface Conversation {
+  employee: Employee;
+  lastMessage: Message | null;
+  unreadCount: number;
+}
 
 function normalizeMessage(m: MessageApi): Message {
   return {
@@ -65,561 +65,508 @@ function normalizeMessage(m: MessageApi): Message {
     timestamp: m.timestamp,
     type: m.type,
     status: m.status,
+    createdAt: m.createdAt,
   };
 }
 
-function loadChatSettings(): ChatSettings {
-  const saved = localStorage.getItem(CHAT_SETTINGS_KEY);
-  if (!saved) return { chatEnabled: true };
-  try {
-    const parsed = JSON.parse(saved) as Partial<ChatSettings>;
-    return {
-      chatEnabled: parsed.chatEnabled ?? true,
-    };
-  } catch {
-    return { chatEnabled: true };
-  }
+function getInitials(name: string): string {
+  return name
+    .split(" ")
+    .map((n) => n[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
 }
 
-const seedNotifications: NotificationItem[] = [
-  {
-    id: "NTF-001",
-    title: "System Maintenance",
-    message: "Scheduled maintenance tonight at 11:00 PM.",
-    audience: "all",
-    createdAt: "2026-02-03",
-  },
-];
-
 export default function Messaging() {
-  const [searchQuery, setSearchQuery] = useState("");
-  const [addOpen, setAddOpen] = useState(false);
-  const [newMessageOpen, setNewMessageOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<"messages" | "notifications">("messages");
-  const [chatSettings, setChatSettings] = useState<ChatSettings>(() => loadChatSettings());
-
+  const [employees, setEmployees] = useState<Employee[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversationMessages, setConversationMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
 
-  const [items, setItems] = useState<NotificationItem[]>(() => []);
-  const [messages, setMessages] = useState<Message[]>(() => []);
+  // View state
+  const [view, setView] = useState<"list" | "conversation" | "employees">("list");
+  const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
 
-  const [formData, setFormData] = useState({
-    title: "",
-    message: "",
-    audience: "all" as NotificationItem["audience"],
-  });
+  // Search
+  const [searchQuery, setSearchQuery] = useState("");
+  const [employeeSearchQuery, setEmployeeSearchQuery] = useState("");
 
-  const [messageFormData, setMessageFormData] = useState({
-    type: "direct" as Message["type"],
-    recipient: "",
-    content: "",
-  });
+  // New message
+  const [newMessageContent, setNewMessageContent] = useState("");
+  const [sending, setSending] = useState(false);
 
-  useEffect(() => {
-    let mounted = true;
-    const load = async () => {
-      try {
-        setLoading(true);
-        setApiError(null);
-        const notificationsList = await listResource<NotificationItem>("notifications");
-        if (!mounted) return;
+  // Refs
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-        setItems(notificationsList);
-
-        // Only load messages when Messages tab is active
-        if (activeTab === "messages") {
-          const messagesRes = await apiFetch<{ items?: MessageApi[] } | MessageApi[]>("/api/messages");
-          if (!mounted) return;
-          const rawMessages = Array.isArray(messagesRes) ? messagesRes : (messagesRes.items ?? []);
-          setMessages(rawMessages.map(normalizeMessage));
-        }
-      } catch (e) {
-        if (!mounted) return;
-        setApiError(e instanceof Error ? e.message : "Failed to load messaging data");
-      } finally {
-        if (!mounted) return;
-        setLoading(false);
-      }
-    };
-
-    void load();
-    return () => {
-      mounted = false;
-    };
-  }, [activeTab]);
-
-  const refresh = async () => {
-    if (activeTab === "messages") {
-      const [notificationsList, messagesRes] = await Promise.all([
-        listResource<NotificationItem>("notifications"),
-        apiFetch<{ items?: MessageApi[] } | MessageApi[]>("/api/messages"),
-      ]);
-      setItems(notificationsList);
-      const rawMessages = Array.isArray(messagesRes) ? messagesRes : (messagesRes.items ?? []);
-      setMessages(rawMessages.map(normalizeMessage));
-      return;
-    }
-
-    const notificationsList = await listResource<NotificationItem>("notifications");
-    setItems(notificationsList);
-  };
+  const currentUser = "Admin"; // Current logged in user
 
   useEffect(() => {
-    localStorage.setItem(CHAT_SETTINGS_KEY, JSON.stringify(chatSettings));
-  }, [chatSettings]);
+    loadConversations();
+    loadEmployees();
+  }, []);
 
-  const filteredNotifications = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((n) => {
-      return (
-        n.title.toLowerCase().includes(q) ||
-        n.message.toLowerCase().includes(q) ||
-        n.audience.toLowerCase().includes(q)
-      );
-    });
-  }, [items, searchQuery]);
-
-  const filteredMessages = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    if (!q) return messages;
-    return messages.filter((m) => {
-      return m.recipient.toLowerCase().includes(q) || m.content.toLowerCase().includes(q);
-    });
-  }, [messages, searchQuery]);
-
-  const addNotification = async () => {
-    if (!formData.title || !formData.message) return;
-    const next: NotificationItem = {
-      id: `NTF-${Date.now().toString().slice(-6)}`,
-      title: formData.title,
-      message: formData.message,
-      audience: formData.audience,
-      createdAt: new Date().toISOString().split("T")[0],
-    };
+  const loadEmployees = async () => {
     try {
-      setApiError(null);
-      await createResource<NotificationItem>("notifications", next);
-      await refresh();
-      setAddOpen(false);
-      setFormData({ title: "", message: "", audience: "all" });
+      const employeesList = await listResource<Employee>("employees");
+      setEmployees(employeesList);
     } catch (e) {
-      setApiError(e instanceof Error ? e.message : "Failed to send notification");
+      console.error("Failed to load employees:", e);
     }
   };
 
-  const addMessage = async () => {
-    if (!messageFormData.content.trim()) return;
-    if (messageFormData.type === "direct" && !messageFormData.recipient.trim()) return;
-
-    const payload: Omit<Message, "id"> = {
-      sender: "You",
-      senderAvatar: "AD",
-      recipient: messageFormData.type === "broadcast" ? "All Employees" : messageFormData.recipient.trim(),
-      content: messageFormData.content,
-      timestamp: "Just now",
-      type: messageFormData.type,
-      status: "sent",
-    };
-
+  const loadConversations = async () => {
     try {
+      setLoading(true);
       setApiError(null);
+      const res = await apiFetch<{ items?: ConversationFromApi[] }>(`/api/messages/conversations/${encodeURIComponent(currentUser)}`);
+      const convs = res.items ?? [];
+      setConversations(convs.map((c) => ({
+        employee: c.employee,
+        lastMessage: c.lastMessage,
+        unreadCount: c.unreadCount,
+      })));
+    } catch (e) {
+      setApiError(e instanceof Error ? e.message : "Failed to load conversations");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadConversationMessages = async (employeeName: string) => {
+    try {
+      const res = await apiFetch<{ items?: MessageApi[] }>(
+        `/api/messages/conversation/${encodeURIComponent(currentUser)}/${encodeURIComponent(employeeName)}`
+      );
+      const msgs = res.items ?? [];
+      setConversationMessages(msgs.map(normalizeMessage).sort((a, b) =>
+        new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+      ));
+    } catch (e) {
+      console.error("Failed to load conversation messages:", e);
+      setConversationMessages([]);
+    }
+  };
+
+  const markMessagesAsRead = async (sender: string) => {
+    try {
+      await apiFetch("/api/messages/mark-read", {
+        method: "POST",
+        body: JSON.stringify({ sender, recipient: currentUser }),
+      });
+      // Refresh conversations to update unread counts
+      await loadConversations();
+    } catch (e) {
+      console.error("Failed to mark messages as read:", e);
+    }
+  };
+
+  // Scroll to bottom of messages
+  useEffect(() => {
+    if (view === "conversation" && messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [view, conversationMessages]);
+
+  // Filtered conversations
+  const filteredConversations = useMemo(() => {
+    if (!searchQuery.trim()) return conversations;
+    const q = searchQuery.toLowerCase();
+    return conversations.filter((conv) =>
+      conv.employee.name.toLowerCase().includes(q) ||
+      conv.employee.email.toLowerCase().includes(q) ||
+      conv.employee.department.toLowerCase().includes(q)
+    );
+  }, [conversations, searchQuery]);
+
+  // Filtered employees for selection
+  const filteredEmployees = useMemo(() => {
+    if (!employeeSearchQuery.trim()) return employees;
+    const q = employeeSearchQuery.toLowerCase();
+    return employees.filter((emp) =>
+      emp.name.toLowerCase().includes(q) ||
+      emp.email.toLowerCase().includes(q) ||
+      emp.department.toLowerCase().includes(q)
+    );
+  }, [employees, employeeSearchQuery]);
+
+  const startConversation = async (employee: Employee) => {
+    setSelectedEmployee(employee);
+    setView("conversation");
+    setEmployeeSearchQuery("");
+    // Load conversation messages from API
+    await loadConversationMessages(employee.name);
+    // Mark messages as read
+    if (employee.name) {
+      await markMessagesAsRead(employee.name);
+    }
+  };
+
+  const sendMessage = async () => {
+    if (!newMessageContent.trim() || !selectedEmployee) return;
+
+    setSending(true);
+    try {
+      const payload: Omit<Message, "id"> = {
+        sender: currentUser,
+        senderAvatar: getInitials(currentUser),
+        recipient: selectedEmployee.name,
+        content: newMessageContent.trim(),
+        timestamp: new Date().toISOString(),
+        type: "direct",
+        status: "sent",
+      };
+
       const res = await apiFetch<{ item?: MessageApi }>("/api/messages", {
         method: "POST",
         body: JSON.stringify(payload),
       });
 
       if (res?.item) {
-        setMessages((prev) => [normalizeMessage(res.item), ...prev]);
-      } else {
-        await refresh();
-      }
+        const newMsg = normalizeMessage(res.item);
+        setConversationMessages((prev) => [...prev, newMsg]);
+        setNewMessageContent("");
 
-      setNewMessageOpen(false);
-      setMessageFormData({ type: "direct", recipient: "", content: "" });
+        // Refresh conversations to update last message
+        await loadConversations();
+      }
     } catch (e) {
       setApiError(e instanceof Error ? e.message : "Failed to send message");
+    } finally {
+      setSending(false);
     }
   };
 
+  const formatMessageTime = (timestamp: string) => {
+    const date = new Date(timestamp);
+    const now = new Date();
+    const isToday = date.toDateString() === now.toDateString();
+    
+    if (isToday) {
+      return date.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
+    }
+    return date.toLocaleDateString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  };
+
+  // Empty state - No conversations yet
+  if (!loading && conversations.length === 0 && view === "list") {
+    return (
+      <AdminLayout>
+        <div className="h-[calc(100vh-200px)] flex flex-col items-center justify-center px-4">
+          <div className="text-center space-y-6">
+            <div className="h-20 w-20 rounded-full bg-primary/10 flex items-center justify-center mx-auto">
+              <MessageCircle className="h-10 w-10 text-primary" />
+            </div>
+            <div>
+              <h2 className="text-2xl font-bold">No Messages Yet</h2>
+              <p className="text-muted-foreground mt-2 max-w-md">
+                Start a conversation with an employee to send and receive messages.
+              </p>
+            </div>
+            <Button 
+              size="lg" 
+              onClick={() => setView("employees")}
+              className="bg-accent hover:bg-accent/90 text-accent-foreground"
+            >
+              <Plus className="h-5 w-5 mr-2" />
+              Start Conversation
+            </Button>
+          </div>
+        </div>
+      </AdminLayout>
+    );
+  }
+
   return (
     <AdminLayout>
-      {/* Mobile-first container */}
       <div className="space-y-4 sm:space-y-5 md:space-y-6 px-2 sm:px-0">
         
-        {/* Page Header - Responsive */}
-        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4 sm:gap-6">
-          <div className="space-y-1.5 sm:space-y-2">
-            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold tracking-tight">
-              Messaging & Notifications
-            </h1>
-            <p className="text-xs sm:text-sm md:text-base text-muted-foreground max-w-3xl">
-              Send system-wide notifications and track logs.
-            </p>
-          </div>
-
-          {/* New Notification Dialog */}
-          {activeTab === "notifications" ? (
-            <Dialog open={addOpen} onOpenChange={setAddOpen}>
-              <DialogTrigger asChild>
-                <Button className="bg-accent hover:bg-accent/90 text-accent-foreground w-full sm:w-auto mt-2 sm:mt-0">
-                  <Plus className="h-4 w-4 mr-2 flex-shrink-0" />
-                  <span className="sm:hidden">New</span>
-                  <span className="hidden sm:inline">New Notification</span>
-                </Button>
-              </DialogTrigger>
-            
-            <DialogContent className="w-[95vw] max-w-2xl mx-auto p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
-              <DialogHeader className="space-y-1.5 sm:space-y-2">
-                <DialogTitle className="text-lg sm:text-xl">New Notification</DialogTitle>
-                <DialogDescription className="text-xs sm:text-sm">
-                  Create and send a notification
-                </DialogDescription>
-              </DialogHeader>
-              
-              <form className="space-y-4 sm:space-y-5">
-                {/* Title */}
-                <div>
-                  <label className="block text-xs sm:text-sm font-medium mb-1.5">Title *</label>
-                  <input
-                    value={formData.title}
-                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                    className="w-full rounded-md border px-3 py-2 text-sm sm:text-base"
-                    placeholder="Overdue task reminder"
-                    required
-                  />
-                </div>
-
-                {/* Message */}
-                <div>
-                  <label className="block text-xs sm:text-sm font-medium mb-1.5">Message *</label>
-                  <textarea
-                    value={formData.message}
-                    onChange={(e) => setFormData({ ...formData, message: e.target.value })}
-                    className="w-full rounded-md border px-3 py-2 text-sm sm:text-base min-h-[80px] sm:min-h-24 resize-none"
-                    placeholder="Write message..."
-                    required
-                  />
-                </div>
-
-                {/* Audience */}
-                <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-                  <div className="w-full sm:w-1/2">
-                    <label className="block text-xs sm:text-sm font-medium mb-1.5">Audience</label>
-                    <select
-                      value={formData.audience}
-                      onChange={(e) =>
-                        setFormData({ ...formData, audience: e.target.value as NotificationItem["audience"] })
-                      }
-                      className="w-full rounded-md border px-3 py-2 text-sm sm:text-base bg-white"
-                    >
-                      <option value="all">All</option>
-                      <option value="employees">Employees</option>
-                      <option value="managers">Managers</option>
-                    </select>
-                  </div>
-                </div>
-              </form>
-              
-              <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-3 mt-4 sm:mt-6">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="space-y-1">
+            {view === "conversation" && selectedEmployee ? (
+              <div className="flex items-center gap-3">
                 <Button 
-                  variant="outline" 
-                  onClick={() => setAddOpen(false)}
-                  className="w-full sm:w-auto order-2 sm:order-1"
+                  variant="ghost" 
+                  size="icon"
+                  onClick={() => {
+                    setView("list");
+                    setSelectedEmployee(null);
+                  }}
                 >
-                  Cancel
+                  <ArrowLeft className="h-5 w-5" />
                 </Button>
-                <Button 
-                  onClick={addNotification} 
-                  className="bg-accent hover:bg-accent/90 text-accent-foreground w-full sm:w-auto order-1 sm:order-2"
-                >
-                  <Bell className="h-4 w-4 mr-2 flex-shrink-0" />
-                  Send
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-            </Dialog>
-          ) : (
-            <Dialog open={newMessageOpen} onOpenChange={setNewMessageOpen}>
-              <DialogTrigger asChild>
-                <Button className="bg-accent hover:bg-accent/90 text-accent-foreground w-full sm:w-auto mt-2 sm:mt-0">
-                  <Plus className="h-4 w-4 mr-2 flex-shrink-0" />
-                  <span className="sm:hidden">New</span>
-                  <span className="hidden sm:inline">New Message</span>
-                </Button>
-              </DialogTrigger>
-
-              <DialogContent className="w-[95vw] max-w-2xl mx-auto p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
-                <DialogHeader className="space-y-1.5 sm:space-y-2">
-                  <DialogTitle className="text-lg sm:text-xl">New Message</DialogTitle>
-                  <DialogDescription className="text-xs sm:text-sm">
-                    Send a message to a person or broadcast to all employees.
-                  </DialogDescription>
-                </DialogHeader>
-
-                <form className="space-y-4 sm:space-y-5">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                    <div className="min-w-0">
-                      <label className="block text-xs sm:text-sm font-medium mb-1.5">Type</label>
-                      <select
-                        value={messageFormData.type}
-                        onChange={(e) =>
-                          setMessageFormData((p) => ({
-                            ...p,
-                            type: e.target.value as Message["type"],
-                            recipient: e.target.value === "broadcast" ? "" : p.recipient,
-                          }))
-                        }
-                        className="w-full rounded-md border px-3 py-2 text-sm sm:text-base bg-white"
-                      >
-                        <option value="direct">Direct</option>
-                        <option value="broadcast">Broadcast</option>
-                      </select>
-                    </div>
-
-                    <div className="min-w-0">
-                      <label className="block text-xs sm:text-sm font-medium mb-1.5">To</label>
-                      <Input
-                        placeholder={messageFormData.type === "broadcast" ? "All Employees" : "Recipient name"}
-                        value={messageFormData.recipient}
-                        onChange={(e) => setMessageFormData((p) => ({ ...p, recipient: e.target.value }))}
-                        disabled={messageFormData.type === "broadcast"}
-                      />
-                    </div>
-
-                    <div className="sm:col-span-2">
-                      <label className="block text-xs sm:text-sm font-medium mb-1.5">Message</label>
-                      <Textarea
-                        className="min-h-[140px]"
-                        placeholder="Type your message..."
-                        value={messageFormData.content}
-                        onChange={(e) => setMessageFormData((p) => ({ ...p, content: e.target.value }))}
-                      />
-                    </div>
-                  </div>
-                </form>
-
-                <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-3 mt-4 sm:mt-6">
-                  <Button
-                    variant="outline"
-                    onClick={() => setNewMessageOpen(false)}
-                    className="w-full sm:w-auto order-2 sm:order-1"
-                    type="button"
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={addMessage}
-                    className="bg-accent hover:bg-accent/90 text-accent-foreground w-full sm:w-auto order-1 sm:order-2"
-                    type="button"
-                  >
-                    <Send className="h-4 w-4 mr-2 flex-shrink-0" />
-                    Send
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
-          )}
-        </div>
-
-        {/* API Error Message */}
-        {apiError && (
-          <div className="rounded-md bg-destructive/10 p-3 sm:p-4">
-            <p className="text-xs sm:text-sm text-destructive break-words">
-              {apiError}
-            </p>
-          </div>
-        )}
-
-        
-
-        <div className="flex gap-2 border-b border-border">
-          <button
-            onClick={() => setActiveTab("messages")}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors",
-              activeTab === "messages"
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground",
-            )}
-            type="button"
-          >
-            <MessageSquare className="w-4 h-4" />
-            Messages
-          </button>
-          <button
-            onClick={() => setActiveTab("notifications")}
-            className={cn(
-              "flex items-center gap-2 px-4 py-2.5 text-sm font-medium border-b-2 transition-colors",
-              activeTab === "notifications"
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground",
-            )}
-            type="button"
-          >
-            <Bell className="w-4 h-4" />
-            Notifications
-          </button>
-        </div>
-
-        {/* Search Card */}
-        <Card className="shadow-soft border-0 sm:border">
-          <CardContent className="p-3 sm:p-6">
-            <div className="relative w-full sm:max-w-md">
-              <label className="block text-xs text-muted-foreground mb-1.5 sm:hidden">
-                {activeTab === "messages" ? "Search Messages" : "Search Notifications"}
-              </label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground" />
-                <Input
-                  placeholder={activeTab === "messages" ? "Search messages..." : "Search notifications..."}
-                  className="pl-8 sm:pl-10 h-9 sm:h-10 text-sm sm:text-base"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Notification Log Card */}
-        <Card className="shadow-soft border-0 sm:border">
-          <CardHeader className="px-4 sm:px-6 py-4 sm:py-5">
-            <CardTitle className="text-base sm:text-lg md:text-xl font-semibold">
-              {activeTab === "messages"
-                ? `Messages (${filteredMessages.length})`
-                : `Notification Log (${filteredNotifications.length})`}
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="p-0 sm:p-6">
-            {loading ? (
-              <div className="flex justify-center items-center py-8 sm:py-12">
-                <div className="text-xs sm:text-sm text-muted-foreground">
-                  Loading...
+                <div>
+                  <h1 className="text-xl sm:text-2xl font-bold">{selectedEmployee.name}</h1>
+                  <p className="text-sm text-muted-foreground">{selectedEmployee.email}</p>
                 </div>
               </div>
             ) : (
               <>
-                {activeTab === "messages" ? (
-                  <div className="divide-y divide-border">
-                    {filteredMessages.length === 0 ? (
-                      <div className="p-6 text-sm text-muted-foreground">No messages found.</div>
-                    ) : (
-                      filteredMessages.map((message) => (
-                        <div key={message.id} className="px-6 py-4">
-                          <div className="flex items-start justify-between gap-4">
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-3">
-                                <div className="w-9 h-9 rounded-full bg-primary/10 text-primary flex items-center justify-center text-sm font-medium">
-                                  {message.senderAvatar}
-                                </div>
-                                <div className="min-w-0">
-                                  <p className="font-medium text-foreground truncate">To: {message.recipient}</p>
-                                  <p className="text-sm text-muted-foreground truncate">{message.content}</p>
-                                </div>
-                              </div>
-                            </div>
-                            <div className="text-right shrink-0">
-                              <p className="text-xs text-muted-foreground">{message.timestamp}</p>
-                              <div className="flex items-center justify-end gap-2 mt-1">
-                                <Badge variant="outline" className="capitalize">
-                                  {message.type}
-                                </Badge>
-                                <span className="text-xs text-muted-foreground">{message.status}</span>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      ))
-                    )}
-                  </div>
-                ) : (
-                  <>
-                    {/* Mobile View - Cards */}
-                    <div className="block sm:hidden space-y-3 p-4">
-                      {filteredNotifications.map((n) => (
-                        <div key={n.id} className="bg-white rounded-lg border p-4 space-y-3">
-                          {/* Header with Icon and Title */}
-                          <div className="flex items-start gap-3">
-                            <div className="h-8 w-8 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0">
-                              <Bell className="h-4 w-4 text-accent" />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-sm truncate">{n.title}</p>
-                              <p className="text-xs text-muted-foreground">{n.id}</p>
-                            </div>
-                          </div>
-
-                          {/* Message */}
-                          <div className="pl-11">
-                            <p className="text-xs text-muted-foreground line-clamp-2">{n.message}</p>
-                          </div>
-
-                          {/* Footer - Audience and Date */}
-                          <div className="flex items-center justify-between pt-1 border-t">
-                            <Badge variant="secondary" className="text-xs">
-                              {n.audience}
-                            </Badge>
-                            <span className="text-xs text-muted-foreground">{n.createdAt}</span>
-                          </div>
-                        </div>
-                      ))}
-
-                      {filteredNotifications.length === 0 && (
-                        <div className="text-center py-8">
-                          <div className="flex justify-center mb-3">
-                            <div className="h-12 w-12 rounded-full bg-muted flex items-center justify-center">
-                              <Bell className="h-6 w-6 text-muted-foreground" />
-                            </div>
-                          </div>
-                          <p className="text-sm text-muted-foreground">No notifications found</p>
-                          <p className="text-xs text-muted-foreground mt-1">
-                            Try adjusting your search or send a new notification
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Tablet/Desktop View - Table */}
-                    <div className="hidden sm:block w-full overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="text-xs md:text-sm w-[50%]">Notification</TableHead>
-                            <TableHead className="text-xs md:text-sm w-[20%]">Audience</TableHead>
-                            <TableHead className="text-xs md:text-sm w-[15%]">Date</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {filteredNotifications.map((n) => (
-                            <TableRow key={n.id} className="hover:bg-muted/30">
-                              <TableCell>
-                                <div className="space-y-1">
-                                  <p className="font-medium text-sm md:text-base">{n.title}</p>
-                                  <p className="text-xs md:text-sm text-muted-foreground line-clamp-2 max-w-2xl">
-                                    {n.message}
-                                  </p>
-                                  <p className="text-xs text-muted-foreground md:hidden">{n.id}</p>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="secondary" className="text-xs md:text-sm">
-                                  {n.audience}
-                                </Badge>
-                              </TableCell>
-                              <TableCell className="text-sm md:text-base text-muted-foreground">{n.createdAt}</TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </>
-                )}
+                <h1 className="text-xl sm:text-2xl md:text-3xl font-bold">Messaging</h1>
+                <p className="text-sm text-muted-foreground">
+                  {conversations.length} conversation{conversations.length !== 1 ? "s" : ""}
+                </p>
               </>
             )}
-          </CardContent>
-        </Card>
+          </div>
+
+          {view !== "conversation" && (
+            <Button 
+              onClick={() => setView("employees")}
+              className="bg-accent hover:bg-accent/90 text-accent-foreground w-full sm:w-auto"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              New Conversation
+            </Button>
+          )}
+        </div>
+
+        {/* Error Message */}
+        {apiError && (
+          <div className="rounded-md bg-destructive/10 p-3 sm:p-4">
+            <p className="text-sm text-destructive">{apiError}</p>
+          </div>
+        )}
+
+        {/* Conversation List View */}
+        {view === "list" && (
+          <>
+            {/* Search */}
+            <Card>
+              <CardContent className="p-3 sm:p-4">
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search conversations..."
+                    className="pl-10"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Conversations */}
+            <Card>
+              <CardContent className="p-0">
+                <div className="divide-y divide-border">
+                  {filteredConversations.map((conv) => (
+                    <button
+                      key={conv.employee.id || conv.employee._id}
+                      onClick={() => startConversation(conv.employee)}
+                      className="w-full flex items-center gap-4 p-4 hover:bg-muted/50 transition-colors text-left"
+                    >
+                      <div className="relative">
+                        <Avatar className="h-12 w-12">
+                          <AvatarFallback className="bg-primary text-primary-foreground">
+                            {getInitials(conv.employee.name)}
+                          </AvatarFallback>
+                        </Avatar>
+                        {conv.unreadCount > 0 && (
+                          <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center">
+                            {conv.unreadCount}
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <p className="font-medium truncate">{conv.employee.name}</p>
+                          {conv.lastMessage && (
+                            <p className="text-xs text-muted-foreground">
+                              {formatMessageTime(conv.lastMessage.timestamp)}
+                            </p>
+                          )}
+                        </div>
+                        <p className={cn(
+                          "text-sm truncate",
+                          conv.unreadCount > 0 ? "font-medium text-foreground" : "text-muted-foreground"
+                        )}>
+                          {conv.lastMessage 
+                            ? `${conv.lastMessage.sender === currentUser || conv.lastMessage.sender === "You" ? "You: " : ""}${conv.lastMessage.content}`
+                            : "Start a conversation..."
+                          }
+                        </p>
+                      </div>
+                    </button>
+                  ))}
+                  
+                  {filteredConversations.length === 0 && (
+                    <div className="p-8 text-center">
+                      <p className="text-muted-foreground">No conversations found</p>
+                      <Button 
+                        variant="outline" 
+                        className="mt-4"
+                        onClick={() => setView("employees")}
+                      >
+                        <Plus className="h-4 w-4 mr-2" />
+                        Start New Conversation
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          </>
+        )}
+
+        {/* Employee Selection Dialog */}
+        <Dialog open={view === "employees"} onOpenChange={() => setView("list")}>
+          <DialogContent className="w-[95vw] max-w-2xl h-[80vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle>Select Employee to Message</DialogTitle>
+            </DialogHeader>
+            
+            <div className="relative mb-4">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="Search employees by name, email, or department..."
+                className="pl-10"
+                value={employeeSearchQuery}
+                onChange={(e) => setEmployeeSearchQuery(e.target.value)}
+              />
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-2">
+              {filteredEmployees.map((employee) => (
+                <button
+                  key={employee.id || employee._id}
+                  onClick={() => startConversation(employee)}
+                  className="w-full flex items-center gap-4 p-3 rounded-lg hover:bg-muted transition-colors text-left"
+                >
+                  <Avatar className="h-12 w-12">
+                    <AvatarFallback className="bg-primary text-primary-foreground">
+                      {getInitials(employee.name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium truncate">{employee.name}</p>
+                    <p className="text-sm text-muted-foreground truncate">{employee.email}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <Badge variant="secondary" className="text-xs">
+                        {employee.department || "No Department"}
+                      </Badge>
+                      <Badge 
+                        variant="outline" 
+                        className={cn(
+                          "text-xs",
+                          employee.status === "active" ? "bg-green-100 text-green-800" : "bg-gray-100 text-gray-800"
+                        )}
+                      >
+                        {employee.status}
+                      </Badge>
+                    </div>
+                  </div>
+                </button>
+              ))}
+              
+              {filteredEmployees.length === 0 && (
+                <div className="text-center py-8">
+                  <User className="h-12 w-12 text-muted-foreground mx-auto mb-3" />
+                  <p className="text-muted-foreground">No employees found</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Try a different search term
+                  </p>
+                </div>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Conversation View */}
+        {view === "conversation" && selectedEmployee && (
+          <Card className="flex flex-col h-[calc(100vh-300px)] min-h-[500px]">
+            {/* Messages Area */}
+            <CardContent className="flex-1 overflow-y-auto p-4 space-y-4">
+              {conversationMessages.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center">
+                  <MessageCircle className="h-16 w-16 text-muted-foreground/50 mb-4" />
+                  <p className="text-lg font-medium">Start the conversation</p>
+                  <p className="text-muted-foreground">
+                    Send a message to {selectedEmployee.name}
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {conversationMessages.map((msg, index) => {
+                    const isMe = msg.sender === currentUser || msg.sender === "You";
+                    const showAvatar = index === 0 || conversationMessages[index - 1].sender !== msg.sender;
+                    
+                    return (
+                      <div
+                        key={msg.id}
+                        className={cn(
+                          "flex gap-3",
+                          isMe ? "flex-row-reverse" : "flex-row"
+                        )}
+                      >
+                        {showAvatar ? (
+                          <Avatar className="h-8 w-8 flex-shrink-0">
+                            <AvatarFallback className={isMe ? "bg-primary text-primary-foreground" : "bg-muted"}>
+                              {getInitials(isMe ? currentUser : msg.sender)}
+                            </AvatarFallback>
+                          </Avatar>
+                        ) : (
+                          <div className="w-8 flex-shrink-0" />
+                        )}
+                        <div
+                          className={cn(
+                            "max-w-[70%] rounded-2xl px-4 py-2",
+                            isMe 
+                              ? "bg-primary text-primary-foreground rounded-br-none"
+                              : "bg-muted rounded-bl-none"
+                          )}
+                        >
+                          <p className="text-sm">{msg.content}</p>
+                          <p className={cn(
+                            "text-xs mt-1",
+                            isMe ? "text-primary-foreground/70" : "text-muted-foreground"
+                          )}>
+                            {formatMessageTime(msg.timestamp)}
+                            {isMe && (
+                              <span className="ml-2">
+                                {msg.status === "sent" && "✓"}
+                                {msg.status === "delivered" && "✓✓"}
+                                {msg.status === "read" && "✓✓"}
+                              </span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div ref={messagesEndRef} />
+                </>
+              )}
+            </CardContent>
+
+            {/* Message Input */}
+            <div className="p-4 border-t">
+              <div className="flex gap-3">
+                <Textarea
+                  placeholder={`Message ${selectedEmployee.name}...`}
+                  className="min-h-[60px] resize-none"
+                  value={newMessageContent}
+                  onChange={(e) => setNewMessageContent(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      sendMessage();
+                    }
+                  }}
+                />
+                <Button
+                  onClick={sendMessage}
+                  disabled={!newMessageContent.trim() || sending}
+                  className="h-auto px-4"
+                >
+                  <Send className="h-5 w-5" />
+                </Button>
+              </div>
+            </div>
+          </Card>
+        )}
       </div>
     </AdminLayout>
   );

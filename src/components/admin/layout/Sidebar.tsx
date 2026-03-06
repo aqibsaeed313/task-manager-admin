@@ -13,9 +13,11 @@ import {
   UserX,
   BarChart3,
   MessageSquare,
+  Bell,
   Settings,
   LogOut,
   Building2,
+  Activity,
 } from "lucide-react";
 
 import { useNavigate } from "react-router-dom";
@@ -34,9 +36,11 @@ const navItems = [
   { icon: Calendar, label: "Scheduling", path: "/admin/scheduling" },
   { icon: Clock, label: "Time Tracking", path: "/admin/time-tracking" },
   { icon: MessageSquare, label: "Messaging", path: "/admin/messaging" },
+  { icon: Bell, label: "Notifications", path: "/admin/notifications" },
   { icon: UserX, label: "Do Not Hire", path: "/admin/do-not-hire" },
   { icon: ClipboardList, label: "Onboarding", path: "/admin/onboarding" },
   { icon: BarChart3, label: "Reports", path: "/admin/reports" },
+  { icon: Activity, label: "Activity Logs", path: "/admin/activity-logs" },
   { icon: Settings, label: "Settings", path: "/admin/settings" },
 ];
 

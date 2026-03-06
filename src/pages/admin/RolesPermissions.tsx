@@ -21,7 +21,7 @@ import {
   setPermissionMatrix,
 } from "@/lib/auth";
 
-const ROLES: Role[] = ["admin", "manager", "employee"];
+const ROLES: Role[] = ["super-admin", "admin", "manager", "employee"];
 
 export default function RolesPermissions() {
   const [matrix, setMatrix] = useState<PermissionMatrix>(() => getPermissionMatrix());

@@ -8,7 +8,8 @@ type ApiErrorBody = {
 
 export function getApiBaseUrl() {
   // Always use Vercel backend URL
-  return "https://task.se7eninc.com";
+  //return "https://task.se7eninc.com";
+  return "http://localhost:5000";
 }
 
 async function parseJsonSafe(res: Response) {
@@ -22,7 +23,8 @@ async function parseJsonSafe(res: Response) {
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const baseUrl = "https://task.se7eninc.com";
+  //const baseUrl = "https://task.se7eninc.com";
+   const baseUrl = "http://localhost:5000";
   const url = `${String(baseUrl).replace(/\/$/, "")}${path}`;
 
   const auth = getAuthState();
@@ -63,7 +65,7 @@ export type LoginResponse = {
   item: {
     token: string;
     username: string;
-    role: "admin" | "manager";
+    role: "super-admin" | "admin" | "manager";
   };
 };
 

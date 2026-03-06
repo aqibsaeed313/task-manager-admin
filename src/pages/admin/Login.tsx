@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, type Variants } from "framer-motion";
 import { Button } from "@/components/admin/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/admin/ui/card";
 import { Input } from "@/components/admin/ui/input";
@@ -29,7 +29,7 @@ export default function Login() {
   useEffect(() => {
     const auth = getAuthState();
     if (auth.isAuthenticated && auth.role) {
-      navigate(auth.role === "admin" ? "/admin" : "/manager", { replace: true });
+      navigate(auth.role === "admin" || auth.role === "super-admin" ? "/admin" : "/manager", { replace: true });
     }
   }, [navigate]);
 
@@ -39,7 +39,7 @@ export default function Login() {
     try {
       setError(null);
       const result = await login(formData.username, formData.password);
-      const defaultLanding = result.role === "admin" ? "/admin" : "/manager";
+      const defaultLanding = result.role === "admin" || result.role === "super-admin" ? "/admin" : "/manager";
       const nextPath = redirectTo && redirectTo !== "/" && redirectTo !== "/login" ? redirectTo : defaultLanding;
       navigate(nextPath, { replace: true });
     } catch (e) {
@@ -56,7 +56,7 @@ export default function Login() {
   };
 
   // Animation variants
-  const containerVariants = {
+  const containerVariants: Variants = {
     hidden: { opacity: 0 },
     visible: {
       opacity: 1,
@@ -67,27 +67,27 @@ export default function Login() {
     }
   };
 
-  const itemVariants = {
+  const itemVariants: Variants = {
     hidden: { y: 20, opacity: 0 },
     visible: {
       y: 0,
       opacity: 1,
       transition: {
-        type: "spring",
+        type: "spring" as const,
         stiffness: 100,
         damping: 12
       }
     }
   };
 
-  const cardVariants = {
+  const cardVariants: Variants = {
     hidden: { scale: 0.8, opacity: 0, y: 50 },
     visible: {
       scale: 1,
       opacity: 1,
       y: 0,
       transition: {
-        type: "spring",
+        type: "spring" as const,
         stiffness: 100,
         damping: 15,
         mass: 1,
@@ -97,11 +97,11 @@ export default function Login() {
     }
   };
 
-  const buttonVariants = {
+  const buttonVariants: Variants = {
     hover: {
       scale: 1.02,
       transition: {
-        type: "spring",
+        type: "spring" as const,
         stiffness: 400,
         damping: 10
       }
@@ -109,14 +109,14 @@ export default function Login() {
     tap: {
       scale: 0.98,
       transition: {
-        type: "spring",
+        type: "spring" as const,
         stiffness: 400,
         damping: 10
       }
     }
   };
 
-  const errorVariants = {
+  const errorVariants: Variants = {
     hidden: { opacity: 0, x: -20, height: 0 },
     visible: { opacity: 1, x: 0, height: "auto" },
     exit: { opacity: 0, x: 20, height: 0 }

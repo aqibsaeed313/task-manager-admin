@@ -8,6 +8,12 @@ type StoredAuth = {
   token?: string | null;
 };
 
+function getApiBaseUrl(): string {
+  const raw = String(import.meta.env.VITE_API_URL || "").trim();
+  if (raw) return raw;
+  return "https://task.se7eninc.com";
+}
+
 function getStoredToken(): string | null {
   try {
     const raw = localStorage.getItem("taskflow_auth");
@@ -23,7 +29,7 @@ export async function apiFetch<T>(
   path: string,
   options: RequestInit = {},
 ): Promise<T> {
-  const baseUrl = "https://task.se7eninc.com";
+  const baseUrl = getApiBaseUrl();
   const url = `${String(baseUrl).replace(/\/$/, "")}${path}`;
 
   const token = getStoredToken();

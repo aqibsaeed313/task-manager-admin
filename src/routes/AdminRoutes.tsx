@@ -14,9 +14,11 @@ import Scheduling from "@/pages/admin/Scheduling";
 import TimeTracking from "@/pages/admin/TimeTracking";
 import EmployeeTimeHistory from "@/pages/admin/EmployeeTimeHistory";
 import Messaging from "@/pages/admin/Messaging";
+import Notifications from "@/pages/admin/Notifications";
 import DoNotHire from "@/pages/admin/DoNotHire";
 import Onboarding from "@/pages/admin/Onboarding";
 import Reports from "@/pages/admin/Reports";
+import ActivityLogs from "@/pages/admin/ActivityLogs";
 import Settings from "@/pages/admin/Settings";
 import Profile from "@/pages/admin/Profile";
 import RolesPermissions from "@/pages/admin/RolesPermissions";
@@ -41,9 +43,11 @@ export default function AdminRoutes() {
       { path: "time-tracking", element: <TimeTracking /> },
       { path: "time-tracking/history/:employee", element: <EmployeeTimeHistory /> },
       { path: "messaging", element: <Messaging /> },
+      { path: "notifications", element: <Notifications /> },
       { path: "do-not-hire", element: <DoNotHire /> },
       { path: "onboarding", element: <Onboarding /> },
       { path: "reports", element: <Reports /> },
+      { path: "activity-logs", element: <ActivityLogs /> },
       { path: "settings", element: <Settings /> },
       { path: "profile", element: <Profile /> },
       { path: "*", element: <NotFound /> },
@@ -53,7 +57,7 @@ export default function AdminRoutes() {
 
   const element = useRoutes(routes);
 
-  if (!auth.isAuthenticated || auth.role !== "admin") {
+  if (!auth.isAuthenticated || (auth.role !== "admin" && auth.role !== "super-admin")) {
     return <Navigate to="/login" replace state={{ from: location }} />;
   }
 

@@ -60,7 +60,7 @@ interface User {
   name: string;
   initials: string;
   email: string;
-  role: "admin" | "manager" | "employee";
+  role: "super-admin" | "admin" | "manager" | "employee";
   lastLogin: string;
   status: "active" | "inactive" | "pending";
   createdAt: string;
@@ -72,7 +72,7 @@ type BackendUser = {
   username?: string;
   name?: string;
   email?: string;
-  role: "admin" | "manager" | "employee";
+  role: "super-admin" | "admin" | "manager" | "employee";
   status?: "active" | "inactive" | "pending";
   createdAt?: string;
   updatedAt?: string;
@@ -80,6 +80,7 @@ type BackendUser = {
 
 // Enhanced color scheme with beautiful gradients
 const roleClasses = {
+  "super-admin": "bg-gradient-to-r from-slate-900/20 to-slate-900/10 text-slate-900 border-slate-900/20 shadow-sm",
   admin: "bg-gradient-to-r from-destructive/20 to-destructive/10 text-destructive border-destructive/20 shadow-sm",
   manager: "bg-gradient-to-r from-[#6366f1]/20 to-[#8b5cf6]/20 text-[#6366f1] dark:text-[#a78bfa] border-[#6366f1]/20 shadow-sm",
   employee: "bg-gradient-to-r from-muted to-muted/50 text-muted-foreground border-muted-foreground/20 shadow-sm",
@@ -470,6 +471,7 @@ const Users = () => {
                           {...form.register("role")} 
                           className="w-full rounded-lg border px-3 py-2 text-sm sm:text-base bg-white h-9 sm:h-10 focus:ring-2 focus:ring-primary/20 transition-all"
                         >
+                          <option value="super-admin">Super Admin</option>
                           <option value="admin">Admin</option>
                           <option value="manager">Manager</option>
                           <option value="employee">Employee</option>
@@ -538,6 +540,7 @@ const Users = () => {
           variants={containerVariants}
         >
           {[
+            { role: "super-admin", icon: Shield, label: "Super Admins", color: "slate-900", gradient: "from-slate-900/20 to-slate-900/5" },
             { role: "admin", icon: Shield, label: "Administrators", color: "destructive", gradient: "from-destructive/20 to-destructive/5" },
             { role: "manager", icon: UserCog, label: "Managers", color: "[#6366f1]", gradient: "from-[#6366f1]/20 to-[#8b5cf6]/10" },
             { role: "employee", icon: UsersIcon, label: "Employees", color: "muted-foreground", gradient: "from-muted to-muted/50" },
@@ -603,6 +606,7 @@ const Users = () => {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="all">All Roles</SelectItem>
+                      <SelectItem value="super-admin">Super Admin</SelectItem>
                       <SelectItem value="admin">Admin</SelectItem>
                       <SelectItem value="manager">Manager</SelectItem>
                       <SelectItem value="employee">Employee</SelectItem>
@@ -1031,6 +1035,7 @@ const Users = () => {
                     onChange={(e) => setEditFormData({ ...editFormData, role: e.target.value as User["role"] })}
                     className="w-full rounded-lg border px-3 py-2 text-sm sm:text-base bg-white h-9 sm:h-10 focus:ring-2 focus:ring-primary/20 transition-all"
                   >
+                    <option value="super-admin">Super Admin</option>
                     <option value="admin">Admin</option>
                     <option value="manager">Manager</option>
                     <option value="employee">Employee</option>
@@ -1109,9 +1114,10 @@ const Users = () => {
                 <label className="block text-xs sm:text-sm font-medium mb-1.5">New Role</label>
                 <select
                   value={newRole}
-                  onChange={(e) => setNewRole(e.target.value as User["role"])}
+                  onChange={(e) => setNewRole(e.target.value as User["role"]) }
                   className="w-full rounded-lg border px-3 py-2 text-sm sm:text-base bg-white h-9 sm:h-10 focus:ring-2 focus:ring-primary/20 transition-all"
                 >
+                  <option value="super-admin">Super Admin</option>
                   <option value="admin">Admin</option>
                   <option value="manager">Manager</option>
                   <option value="employee">Employee</option>

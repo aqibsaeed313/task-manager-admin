@@ -13,7 +13,7 @@ const queryClient = new QueryClient();
 function IndexRedirect() {
   const auth = getAuthState();
   if (!auth.isAuthenticated || !auth.role) return <Navigate to="/login" replace />;
-  return <Navigate to={auth.role === "admin" ? "/admin" : "/manager"} replace />;
+  return <Navigate to={auth.role === "admin" || auth.role === "super-admin" ? "/admin" : "/manager"} replace />;
 }
 
 const App = () => (
