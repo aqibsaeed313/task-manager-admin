@@ -47,7 +47,7 @@ export default function AdminRoutes() {
       { path: "do-not-hire", element: <DoNotHire /> },
       { path: "onboarding", element: <Onboarding /> },
       { path: "reports", element: <Reports /> },
-      { path: "activity-logs", element: <ActivityLogs /> },
+      { path: "activity-logs", element: auth.role === "super-admin" ? <ActivityLogs /> : <Navigate to="/admin" replace /> },
       { path: "settings", element: <Settings /> },
       { path: "profile", element: <Profile /> },
       { path: "*", element: <NotFound /> },

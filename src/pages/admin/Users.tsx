@@ -43,6 +43,7 @@ import {
   Users as UsersIcon,
   ArrowRight,
   AlertTriangle,
+  Key,
 } from "lucide-react";
 import { 
   Dialog, 
@@ -54,14 +55,15 @@ import {
   DialogTrigger 
 } from "@/components/admin/ui/dialog";
 import { useForm } from "react-hook-form";
-import { createResource, deleteResource, listResource, updateResource } from "@/lib/admin/apiClient";
+import { createResource, deleteResource, listResource, updateResource, apiFetch } from "@/lib/admin/apiClient";
+import { getAuthState } from "@/lib/auth";
 
 interface User {
   id: string;
   name: string;
   initials: string;
   email: string;
-  role: "super-admin" | "admin" | "manager" | "employee";
+  role: "super-admin" | "admin" | "manager";
   lastLogin: string;
   status: "active" | "inactive" | "pending";
   createdAt: string;
@@ -73,7 +75,7 @@ type BackendUser = {
   username?: string;
   name?: string;
   email?: string;
-  role: "super-admin" | "admin" | "manager" | "employee";
+  role: "super-admin" | "admin" | "manager";
   status?: "active" | "inactive" | "pending";
   createdAt?: string;
   updatedAt?: string;
@@ -84,7 +86,6 @@ const roleClasses = {
   "super-admin": "bg-gradient-to-r from-slate-900/20 to-slate-900/10 text-slate-900 border-slate-900/20 shadow-sm",
   admin: "bg-gradient-to-r from-destructive/20 to-destructive/10 text-destructive border-destructive/20 shadow-sm",
   manager: "bg-gradient-to-r from-[#6366f1]/20 to-[#8b5cf6]/20 text-[#6366f1] dark:text-[#a78bfa] border-[#6366f1]/20 shadow-sm",
-  employee: "bg-gradient-to-r from-muted to-muted/50 text-muted-foreground border-muted-foreground/20 shadow-sm",
 };
 
 const statusClasses = {
@@ -153,13 +154,26 @@ const Users = () => {
   const [changeRoleOpen, setChangeRoleOpen] = useState(false);
   const [deactivateOpen, setDeactivateOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
-  const [newRole, setNewRole] = useState<User["role"]>("employee");
+  const [resetPasswordOpen, setResetPasswordOpen] = useState(false);
+  const [resetPasswordData, setResetPasswordData] = useState({
+    newPassword: "",
+    confirmPassword: "",
+  });
+  const [resetPasswordLoading, setResetPasswordLoading] = useState(false);
+  const [isSuperAdmin, setIsSuperAdmin] = useState(false);
+  const [newRole, setNewRole] = useState<User["role"]>("manager");
   const [editFormData, setEditFormData] = useState({
     name: "",
     email: "",
-    role: "employee" as User["role"],
+    role: "manager" as User["role"],
     status: "active" as User["status"],
   });
+
+  useEffect(() => {
+    // Check if current user is super-admin
+    const auth = getAuthState();
+    setIsSuperAdmin(auth.role === "super-admin");
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -211,7 +225,7 @@ const Users = () => {
       name: "",
       password: "",
       email: "",
-      role: "employee",
+      role: "manager",
       status: "active",
     },
   });
@@ -259,6 +273,52 @@ const Users = () => {
   const handleDeleteUser = (user: User) => {
     setSelectedUser(user);
     setDeleteOpen(true);
+  };
+
+  // Super Admin: Reset Password handlers
+  const handleResetPassword = (user: User) => {
+    if (!isSuperAdmin) return;
+    setSelectedUser(user);
+    setResetPasswordData({ newPassword: "", confirmPassword: "" });
+    setResetPasswordOpen(true);
+  };
+
+  const confirmResetPassword = async () => {
+    if (!selectedUser || !isSuperAdmin) return;
+    
+    // Validate passwords match
+    if (resetPasswordData.newPassword !== resetPasswordData.confirmPassword) {
+      setApiError("Passwords do not match");
+      return;
+    }
+    
+    // Validate password length
+    if (resetPasswordData.newPassword.length < 6) {
+      setApiError("Password must be at least 6 characters");
+      return;
+    }
+
+    try {
+      setResetPasswordLoading(true);
+      setApiError(null);
+      
+      await apiFetch(`/api/users/${selectedUser.id}/reset-password`, {
+        method: "POST",
+        body: JSON.stringify({
+          newPassword: resetPasswordData.newPassword,
+          confirmPassword: resetPasswordData.confirmPassword,
+        }),
+      });
+      
+      setResetPasswordOpen(false);
+      setResetPasswordData({ newPassword: "", confirmPassword: "" });
+      setSelectedUser(null);
+      // Show success (you could add a success toast here)
+    } catch (e) {
+      setApiError(e instanceof Error ? e.message : "Failed to reset password");
+    } finally {
+      setResetPasswordLoading(false);
+    }
   };
 
   const refreshUsers = async () => {
@@ -519,7 +579,6 @@ const Users = () => {
                           <option value="super-admin">Super Admin</option>
                           <option value="admin">Admin</option>
                           <option value="manager">Manager</option>
-                          <option value="employee">Employee</option>
                         </select>
                         {errors.role && (
                           <p className="text-xs text-destructive">{String(errors.role.message || "Role is required")}</p>
@@ -603,7 +662,6 @@ const Users = () => {
             { role: "super-admin", icon: Shield, label: "Super Admins", color: "slate-900", gradient: "from-slate-900/20 to-slate-900/5" },
             { role: "admin", icon: Shield, label: "Administrators", color: "destructive", gradient: "from-destructive/20 to-destructive/5" },
             { role: "manager", icon: UserCog, label: "Managers", color: "[#6366f1]", gradient: "from-[#6366f1]/20 to-[#8b5cf6]/10" },
-            { role: "employee", icon: UsersIcon, label: "Employees", color: "muted-foreground", gradient: "from-muted to-muted/50" },
           ].map((item, index) => (
             <motion.div
               key={item.role}
@@ -669,7 +727,6 @@ const Users = () => {
                       <SelectItem value="super-admin">Super Admin</SelectItem>
                       <SelectItem value="admin">Admin</SelectItem>
                       <SelectItem value="manager">Manager</SelectItem>
-                      <SelectItem value="employee">Employee</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -754,6 +811,12 @@ const Users = () => {
                                   <Edit className="mr-2 h-4 w-4" />
                                   Edit User
                                 </DropdownMenuItem>
+                                {isSuperAdmin && (
+                                  <DropdownMenuItem onClick={() => handleResetPassword(user)}>
+                                    <Key className="mr-2 h-4 w-4" />
+                                    Reset Password
+                                  </DropdownMenuItem>
+                                )}
                                 <DropdownMenuItem onClick={() => handleChangeRole(user)}>
                                   <Shield className="mr-2 h-4 w-4" />
                                   Change Role
@@ -929,6 +992,12 @@ const Users = () => {
                                       <Edit className="mr-2 h-4 w-4" />
                                       Edit User
                                     </DropdownMenuItem>
+                                    {isSuperAdmin && (
+                                      <DropdownMenuItem onClick={() => handleResetPassword(user)}>
+                                        <Key className="mr-2 h-4 w-4" />
+                                        Reset Password
+                                      </DropdownMenuItem>
+                                    )}
                                     <DropdownMenuItem onClick={() => handleChangeRole(user)}>
                                       <Shield className="mr-2 h-4 w-4" />
                                       Change Role
@@ -1098,7 +1167,6 @@ const Users = () => {
                     <option value="super-admin">Super Admin</option>
                     <option value="admin">Admin</option>
                     <option value="manager">Manager</option>
-                    <option value="employee">Employee</option>
                   </select>
                 </div>
                 <div className="flex-1 space-y-1.5">
@@ -1180,7 +1248,6 @@ const Users = () => {
                   <option value="super-admin">Super Admin</option>
                   <option value="admin">Admin</option>
                   <option value="manager">Manager</option>
-                  <option value="employee">Employee</option>
                 </select>
               </div>
             </motion.div>
@@ -1331,6 +1398,89 @@ const Users = () => {
                 className="w-full sm:w-auto order-1 sm:order-2"
               >
                 Delete User
+              </Button>
+            </motion.div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reset Password Dialog - Super Admin Only */}
+      <Dialog open={resetPasswordOpen} onOpenChange={setResetPasswordOpen}>
+        <DialogContent className="w-[95vw] max-w-md mx-auto p-4 sm:p-6">
+          <DialogHeader className="space-y-1.5 sm:space-y-2">
+            <DialogTitle className="text-lg sm:text-xl bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+              Reset User Password
+            </DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm">
+              Set a new password for {selectedUser?.name}. This action is only available to Super Admins.
+            </DialogDescription>
+          </DialogHeader>
+          {selectedUser && (
+            <motion.div 
+              className="space-y-4 sm:space-y-5"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+            >
+              {/* User Info */}
+              <div className="p-3 sm:p-4 rounded-lg bg-gradient-to-r from-muted to-muted/50 space-y-1">
+                <p className="text-sm sm:text-base font-medium">{selectedUser.name}</p>
+                <p className="text-xs sm:text-sm text-muted-foreground">{selectedUser.email}</p>
+              </div>
+
+              {/* New Password */}
+              <div className="space-y-1.5">
+                <label className="block text-xs sm:text-sm font-medium">New Password</label>
+                <input
+                  type="password"
+                  value={resetPasswordData.newPassword}
+                  onChange={(e) => setResetPasswordData({ ...resetPasswordData, newPassword: e.target.value })}
+                  placeholder="Minimum 6 characters"
+                  className="w-full rounded-lg border px-3 py-2 text-sm sm:text-base h-9 sm:h-10 focus:ring-2 focus:ring-primary/20 transition-all"
+                />
+              </div>
+
+              {/* Confirm Password */}
+              <div className="space-y-1.5">
+                <label className="block text-xs sm:text-sm font-medium">Confirm New Password</label>
+                <input
+                  type="password"
+                  value={resetPasswordData.confirmPassword}
+                  onChange={(e) => setResetPasswordData({ ...resetPasswordData, confirmPassword: e.target.value })}
+                  placeholder="Re-enter new password"
+                  className="w-full rounded-lg border px-3 py-2 text-sm sm:text-base h-9 sm:h-10 focus:ring-2 focus:ring-primary/20 transition-all"
+                />
+              </div>
+            </motion.div>
+          )}
+          <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-3 mt-4 sm:mt-6">
+            <motion.div
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="w-full sm:w-auto"
+            >
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setResetPasswordOpen(false);
+                  setResetPasswordData({ newPassword: "", confirmPassword: "" });
+                }}
+                className="w-full sm:w-auto order-2 sm:order-1"
+              >
+                Cancel
+              </Button>
+            </motion.div>
+            <motion.div
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              className="w-full sm:w-auto"
+            >
+              <Button 
+                onClick={confirmResetPassword}
+                disabled={resetPasswordLoading || !resetPasswordData.newPassword || !resetPasswordData.confirmPassword}
+                className="bg-gradient-to-r from-primary to-primary/80 text-white w-full sm:w-auto order-1 sm:order-2 shadow-lg hover:shadow-xl transition-all duration-300 disabled:opacity-60"
+              >
+                {resetPasswordLoading ? "Resetting..." : "Reset Password"}
               </Button>
             </motion.div>
           </DialogFooter>

@@ -22,9 +22,10 @@ import {
 
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
-import { clearAuthState } from "@/lib/auth";
+import { clearAuthState, getAuthState } from "@/lib/auth";
+import { useMemo } from "react";
 
-const navItems = [
+const navItemsBase = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/admin", end: true },
   { icon: Users, label: "User Management", path: "/admin/users" },
   { icon: CheckSquare, label: "Task Management", path: "/admin/tasks" },
@@ -40,9 +41,11 @@ const navItems = [
   { icon: UserX, label: "Do Not Hire", path: "/admin/do-not-hire" },
   { icon: ClipboardList, label: "Onboarding", path: "/admin/onboarding" },
   { icon: BarChart3, label: "Reports", path: "/admin/reports" },
-  { icon: Activity, label: "Activity Logs", path: "/admin/activity-logs" },
   { icon: Settings, label: "Settings", path: "/admin/settings" },
 ];
+
+// Activity Logs only for super-admin
+const activityLogNavItem = { icon: Activity, label: "Activity Logs", path: "/admin/activity-logs" };
 
 type SidebarMode = "desktop" | "mobile";
 
@@ -53,6 +56,18 @@ interface SidebarProps {
 
 export function Sidebar({ mode = "desktop", onNavigate }: SidebarProps) {
   const navigate = useNavigate();
+  const auth = getAuthState();
+
+  // Build nav items based on role
+  const navItems = useMemo(() => {
+    const items = [...navItemsBase];
+    // Insert Activity Logs before Settings (for super-admin only)
+    if (auth.role === "super-admin") {
+      const settingsIndex = items.findIndex((i) => i.label === "Settings");
+      items.splice(settingsIndex, 0, activityLogNavItem);
+    }
+    return items;
+  }, [auth.role]);
 
   const onLogout = () => {
     clearAuthState();

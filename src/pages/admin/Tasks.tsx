@@ -36,6 +36,15 @@ import {
   DialogFooter,
   DialogTrigger,
 } from "@/components/admin/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/admin/ui/popover";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/admin/ui/command";
 import {
   Plus,
   Search,
@@ -50,6 +59,8 @@ import {
   Calendar,
   FileText,
   Printer,
+  Check,
+  ChevronsUpDown,
   AlertTriangle,
   CheckCircle2,
   AlertCircle,
@@ -63,9 +74,10 @@ interface Task {
   id: string;
   title: string;
   description: string;
-  location: string;
-  assignee: string;
-  assigneeInitials: string;
+  assignees: string[];
+  assignee?: string;
+  assigneeInitials?: string;
+  location?: string;
   priority: "low" | "medium" | "high";
   status: "pending" | "in-progress" | "completed" | "overdue";
   dueDate: string;
@@ -109,6 +121,30 @@ const toDateOnly = (value: string) => {
   if (!v) return "";
   const idx = v.indexOf("T");
   return idx >= 0 ? v.slice(0, idx) : v;
+};
+
+const getInitials = (name: string) => {
+  return String(name || "")
+    .split(" ")
+    .filter(Boolean)
+    .map((n) => n[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+};
+
+const assigneesLabel = (assignees: string[]) => {
+  return (assignees || []).filter(Boolean).join(", ");
+};
+
+const normalizeTaskAssignees = (task: Task): Task => {
+  const legacyAssignee = typeof task.assignee === "string" ? task.assignee.trim() : "";
+  const assignees = Array.isArray(task.assignees)
+    ? task.assignees.filter(Boolean)
+    : legacyAssignee
+      ? [legacyAssignee]
+      : [];
+  return { ...task, assignees };
 };
 
 // Enhanced status classes with beautiful gradients
@@ -175,17 +211,20 @@ const Tasks = () => {
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
+  const [assigneesOpen, setAssigneesOpen] = useState(false);
+  const [editAssigneesOpen, setEditAssigneesOpen] = useState(false);
+  const [reassignAssigneesOpen, setReassignAssigneesOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [viewDetailsOpen, setViewDetailsOpen] = useState(false);
   const [editTaskOpen, setEditTaskOpen] = useState(false);
   const [reassignOpen, setReassignOpen] = useState(false);
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+
   const [hoveredTask, setHoveredTask] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState({
     title: "",
     description: "",
-    location: "",
-    assignee: "",
+    assignees: [] as string[],
     priority: "medium" as Task["priority"],
     status: "pending" as Task["status"],
     dueDate: "",
@@ -198,8 +237,7 @@ const Tasks = () => {
   const [formData, setFormData] = useState({
     title: "",
     description: "",
-    location: "",
-    assignee: "",
+    assignees: [] as string[],
     priority: "medium" as Task["priority"],
     status: "pending" as Task["status"],
     dueDate: "",
@@ -214,12 +252,12 @@ const Tasks = () => {
       try {
         setLoading(true);
         setApiError(null);
-        
+
         // Fetch tasks
         const taskList = await listResource<Task>("tasks");
         if (!mounted) return;
-        setTasksList(taskList);
-        
+        setTasksList(taskList.map(normalizeTaskAssignees));
+
         // Fetch employees from employees API
         let allEmployees: Employee[] = [];
         try {
@@ -230,7 +268,7 @@ const Tasks = () => {
         } catch (empErr) {
           console.error("Failed to load employees:", empErr);
         }
-        
+
         // Fetch users with employee role from users API
         try {
           const userList = await listResource<User>("users");
@@ -249,7 +287,7 @@ const Tasks = () => {
                 email: u.email,
                 status: "active" as const,
               }));
-            
+
             // Merge both lists (remove duplicates by email)
             employeeUsers.forEach((eu) => {
               if (!allEmployees.some((e) => e.email === eu.email)) {
@@ -260,7 +298,7 @@ const Tasks = () => {
         } catch (userErr) {
           console.error("Failed to load users:", userErr);
         }
-        
+
         if (mounted) {
           setEmployees(allEmployees);
         }
@@ -280,7 +318,7 @@ const Tasks = () => {
 
   const refreshTasks = async () => {
     const list = await listResource<Task>("tasks");
-    setTasksList(list);
+    setTasksList(list.map(normalizeTaskAssignees));
   };
 
   const displayIdByTaskId = useMemo(() => {
@@ -297,21 +335,14 @@ const Tasks = () => {
   };
 
   const handleCreateTask = async () => {
-    if (!formData.title || !formData.assignee || !formData.dueDate) return;
+    if (!formData.title || formData.assignees.length === 0 || !formData.dueDate) return;
     try {
       setApiError(null);
       const newTask: Task = {
         id: `TSK-${Date.now().toString().slice(-6)}`,
         title: formData.title,
         description: formData.description,
-        location: formData.location,
-        assignee: formData.assignee,
-        assigneeInitials: formData.assignee
-          .split(" ")
-          .map((n) => n[0])
-          .slice(0, 2)
-          .join("")
-          .toUpperCase(),
+        assignees: formData.assignees,
         priority: formData.priority,
         status: formData.status,
         dueDate: formData.dueDate,
@@ -325,13 +356,13 @@ const Tasks = () => {
         const fd = new FormData();
         fd.append("title", formData.title);
         fd.append("description", formData.description);
-        fd.append("location", formData.location);
-        fd.append("assignee", formData.assignee);
+        fd.append("assignees", JSON.stringify(formData.assignees));
         fd.append("priority", formData.priority);
         fd.append("status", formData.status);
         fd.append("dueDate", formData.dueDate);
         fd.append("dueTime", formData.dueTime);
         fd.append("createdAt", newTask.createdAt);
+
         fd.append("attachmentFileName", attachmentFile.name);
         fd.append("attachmentNote", formData.attachmentNote);
         fd.append("file", attachmentFile);
@@ -354,8 +385,7 @@ const Tasks = () => {
       setFormData({
         title: "",
         description: "",
-        location: "",
-        assignee: "",
+        assignees: [],
         priority: "medium",
         status: "pending",
         dueDate: "",
@@ -370,17 +400,20 @@ const Tasks = () => {
   };
 
   const handleViewDetails = (task: Task) => {
-    setSelectedTask(task);
+    setEditTaskOpen(false);
+    setReassignOpen(false);
+    setSelectedTask(normalizeTaskAssignees(task));
     setViewDetailsOpen(true);
   };
 
   const handleEditTask = (task: Task) => {
+    setViewDetailsOpen(false);
+    setReassignOpen(false);
     setSelectedTask(task);
     setEditFormData({
       title: task.title,
       description: task.description,
-      location: task.location,
-      assignee: task.assignee,
+      assignees: task.assignees || [],
       priority: task.priority,
       status: task.status,
       dueDate: task.dueDate,
@@ -392,8 +425,10 @@ const Tasks = () => {
   };
 
   const handleReassign = (task: Task) => {
+    setViewDetailsOpen(false);
+    setEditTaskOpen(false);
     setSelectedTask(task);
-    setEditFormData({ ...editFormData, assignee: task.assignee });
+    setEditFormData((prev) => ({ ...prev, assignees: task.assignees || [] }));
     setReassignOpen(true);
   };
 
@@ -410,8 +445,7 @@ const Tasks = () => {
         ...selectedTask,
         title: editFormData.title,
         description: editFormData.description,
-        location: editFormData.location,
-        assignee: editFormData.assignee,
+        assignees: editFormData.assignees,
         priority: editFormData.priority,
         status: editFormData.status,
         dueDate: editFormData.dueDate,
@@ -419,6 +453,7 @@ const Tasks = () => {
         attachmentFileName: editFormData.attachmentFileName || "",
         attachmentNote: editFormData.attachmentNote || "",
       });
+
       await refreshTasks();
       setEditTaskOpen(false);
       setSelectedTask(null);
@@ -433,13 +468,7 @@ const Tasks = () => {
       setApiError(null);
       await updateResource<Task>("tasks", selectedTask.id, {
         ...selectedTask,
-        assignee: editFormData.assignee,
-        assigneeInitials: editFormData.assignee
-          .split(" ")
-          .map((n) => n[0])
-          .slice(0, 2)
-          .join("")
-          .toUpperCase(),
+        assignees: editFormData.assignees,
       });
       await refreshTasks();
       setReassignOpen(false);
@@ -463,10 +492,10 @@ const Tasks = () => {
   };
 
   const filteredTasks = tasksList.filter((task) => {
+    const assigneesText = Array.isArray(task.assignees) ? task.assignees.join(" ") : "";
     const matchesSearch =
       task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      task.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      task.assignee.toLowerCase().includes(searchQuery.toLowerCase());
+      assigneesText.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = statusFilter === "all" || task.status === statusFilter;
     const matchesPriority = priorityFilter === "all" || task.priority === priorityFilter;
     return matchesSearch && matchesStatus && matchesPriority;
@@ -474,14 +503,14 @@ const Tasks = () => {
 
   // Get status icon
   const getStatusIcon = (status: string) => {
-    switch(status) {
-      case 'pending':
+    switch (status) {
+      case "pending":
         return <Clock className="h-3 w-3" />;
-      case 'in-progress':
+      case "in-progress":
         return <AlertCircle className="h-3 w-3" />;
-      case 'completed':
+      case "completed":
         return <CheckCircle2 className="h-3 w-3" />;
-      case 'overdue':
+      case "overdue":
         return <AlertTriangle className="h-3 w-3" />;
       default:
         return null;
@@ -526,7 +555,7 @@ const Tasks = () => {
       addHeading(task.title || "Task");
       doc.setFont("helvetica", "normal");
       doc.setFontSize(11);
-      doc.text(`Assigned to: ${task.assignee || "—"}`, margin, y);
+      doc.text(`Assigned to: ${(task.assignees || []).join(", ") || "—"}`, margin, y);
       y += 18;
 
       ensureSpace(120);
@@ -534,7 +563,6 @@ const Tasks = () => {
       addLabelValue("Priority", task.priority || "—");
       addLabelValue("Due Date", toDateOnly(task.dueDate) || "—");
       addLabelValue("Due Time", task.dueTime || "—");
-      addLabelValue("Location", task.location || "—");
 
       ensureSpace(80);
       doc.setFont("helvetica", "bold");
@@ -615,14 +643,14 @@ const Tasks = () => {
 
   return (
     <AdminLayout>
-      <motion.div 
+      <motion.div
         className="space-y-4 sm:space-y-5 md:space-y-6 px-2 sm:px-0 pb-6"
         variants={containerVariants}
         initial="hidden"
         animate="visible"
       >
         {/* Page Header with animated gradient */}
-        <motion.div 
+        <motion.div
           className="relative overflow-hidden rounded-xl bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-4 sm:p-6"
           variants={itemVariants}
           whileHover={{ scale: 1.01 }}
@@ -672,25 +700,31 @@ const Tasks = () => {
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                 >
-                  <Button className="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary text-white w-full sm:w-auto mt-2 sm:mt-0 shadow-lg hover:shadow-xl transition-all duration-300">
+                  <Button
+                    className="bg-gradient-to-r from-primary to-primary/80 hover:from-primary/90 hover:to-primary text-white w-full sm:w-auto mt-2 sm:mt-0 shadow-lg hover:shadow-xl transition-all duration-300"
+                  >
                     <Plus className="h-4 w-4 mr-2 flex-shrink-0" />
                     <span className="sm:hidden">Create</span>
                     <span className="hidden sm:inline">Create Task</span>
                   </Button>
                 </motion.div>
               </DialogTrigger>
-              
-              <DialogContent className="w-[95vw] max-w-2xl mx-auto p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
+
+              <DialogContent
+                className="w-[95vw] max-w-2xl mx-auto p-4 sm:p-6 max-h-[90vh] overflow-y-auto"
+              >
                 <DialogHeader className="space-y-1.5 sm:space-y-2">
-                  <DialogTitle className="text-lg sm:text-xl bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent">
+                  <DialogTitle
+                    className="text-lg sm:text-xl bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent"
+                  >
                     Create New Task
                   </DialogTitle>
                   <DialogDescription className="text-xs sm:text-sm">
                     Create and assign a new task to team members
                   </DialogDescription>
                 </DialogHeader>
-                
-                <motion.form 
+
+                <motion.form
                   className="space-y-4 sm:space-y-5"
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -698,7 +732,9 @@ const Tasks = () => {
                 >
                   {/* Task Title */}
                   <div>
-                    <label className="block text-xs sm:text-sm font-medium mb-1.5">Task Title *</label>
+                    <label className="block text-xs sm:text-sm font-medium mb-1.5">
+                      Task Title *
+                    </label>
                     <input
                       type="text"
                       value={formData.title}
@@ -711,7 +747,9 @@ const Tasks = () => {
 
                   {/* Description */}
                   <div>
-                    <label className="block text-xs sm:text-sm font-medium mb-1.5">Description</label>
+                    <label className="block text-xs sm:text-sm font-medium mb-1.5">
+                      Description
+                    </label>
                     <textarea
                       value={formData.description}
                       onChange={(e) => setFormData({ ...formData, description: e.target.value })}
@@ -720,46 +758,69 @@ const Tasks = () => {
                     />
                   </div>
 
-                  {/* Location & Assignee */}
+                  {/* Assignees */}
                   <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
                     <div className="flex-1 min-w-0">
-                      <label className="block text-xs sm:text-sm font-medium mb-1.5">Location *</label>
-                      <input
-                        type="text"
-                        value={formData.location}
-                        onChange={(e) => setFormData({ ...formData, location: e.target.value })}
-                        placeholder="e.g., Building A - Floor 3"
-                        className="w-full rounded-lg border px-3 py-2 text-sm sm:text-base focus:ring-2 focus:ring-primary/20 transition-all"
-                        required
-                      />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <label className="block text-xs sm:text-sm font-medium mb-1.5">Assignee *</label>
-                      <select
-                        value={formData.assignee}
-                        onChange={(e) => setFormData({ ...formData, assignee: e.target.value })}
-                        className="w-full rounded-lg border px-3 py-2 text-sm sm:text-base bg-white focus:ring-2 focus:ring-primary/20 transition-all"
-                        required
-                      >
-                        <option value="">Select assignee</option>
-                        {employees.map((emp) => (
-                          <option key={emp.id} value={emp.name}>
-                            {emp.name}
-                          </option>
-                        ))}
-                      </select>
+                      <label className="block text-xs sm:text-sm font-medium mb-1.5">
+                        Assignees *
+                      </label>
+                      <Popover open={assigneesOpen} onOpenChange={setAssigneesOpen}>
+                        <PopoverTrigger asChild>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="w-full justify-between h-10"
+                          >
+                            <span className="truncate">
+                              {formData.assignees.length > 0
+                                ? formData.assignees.join(", ")
+                                : "Select assignees"}
+                            </span>
+                            <ChevronsUpDown className="h-4 w-4 opacity-50" />
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                          <Command>
+                            <CommandInput placeholder="Search employees..." />
+                            <CommandList>
+                              <CommandEmpty>No employee found.</CommandEmpty>
+                              <CommandGroup>
+                                {employees.map((emp) => {
+                                  const isSelected = formData.assignees.includes(emp.name);
+                                  return (
+                                    <CommandItem
+                                      key={emp.id}
+                                      onSelect={() => {
+                                        const next = isSelected
+                                          ? formData.assignees.filter((n) => n !== emp.name)
+                                          : [...formData.assignees, emp.name];
+                                        setFormData({ ...formData, assignees: next });
+                                      }}
+                                      className="flex items-center justify-between"
+                                    >
+                                      <span className="truncate">{emp.name}</span>
+                                      <Check className={"h-4 w-4 " + (isSelected ? "opacity-100" : "opacity-0")} />
+                                    </CommandItem>
+                                  );
+                                })}
+                              </CommandGroup>
+                            </CommandList>
+                          </Command>
+                        </PopoverContent>
+                      </Popover>
                       {employees.length === 0 && (
-                        <p className="text-xs text-warning mt-1">No employees found. Check console for errors.</p>
-                      )}
-                      {employees.length > 0 && (
-                        <p className="text-xs text-muted-foreground mt-1">{employees.length} employee(s) available</p>
+                        <p className="text-xs text-warning mt-1">
+                          No employees found. Check console for errors.
+                        </p>
                       )}
                     </div>
                   </div>
 
                   <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
                     <div className="flex-1 min-w-0">
-                      <label className="block text-xs sm:text-sm font-medium mb-1.5">Priority</label>
+                      <label className="block text-xs sm:text-sm font-medium mb-1.5">
+                        Priority
+                      </label>
                       <select
                         value={formData.priority}
                         onChange={(e) => setFormData({ ...formData, priority: e.target.value as Task["priority"] })}
@@ -956,7 +1017,7 @@ const Tasks = () => {
                   <div className="relative">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 sm:h-4 sm:w-4 text-muted-foreground" />
                     <Input
-                      placeholder="Search by title, location, or assignee..."
+                      placeholder="Search by title or assignee..."
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
                       className="pl-8 sm:pl-10 h-9 sm:h-10 text-sm sm:text-base rounded-lg border-0 bg-muted/50 focus:ring-2 focus:ring-primary/20 transition-all"
@@ -1000,8 +1061,6 @@ const Tasks = () => {
                       </SelectContent>
                     </Select>
                   </div>
-
-                 
                 </div>
               </div>
             </CardContent>
@@ -1069,36 +1128,55 @@ const Tasks = () => {
                                   whileHover={{ scale: 1.1 }}
                                   whileTap={{ scale: 0.9 }}
                                 >
-                                  <Button variant="ghost" size="icon" className="h-8 w-8 flex-shrink-0">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 flex-shrink-0"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
                                     <MoreHorizontal className="h-4 w-4" />
                                   </Button>
                                 </motion.div>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent align="end">
-                                <DropdownMenuItem onClick={() => handleViewDetails(task)}>
+                                <DropdownMenuItem onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleViewDetails(task);
+                                }}>
                                   <Eye className="mr-2 h-4 w-4" />
                                   View Details
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => void handlePrintTask(task)}>
+                                <DropdownMenuItem onClick={(e) => {
+                                  e.stopPropagation();
+                                  void handlePrintTask(task);
+                                }}>
                                   <Printer className="mr-2 h-4 w-4" />
                                   Print
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleEditTask(task)}>
+                                <DropdownMenuItem onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEditTask(task);
+                                }}>
                                   <Edit className="mr-2 h-4 w-4" />
                                   Edit Task
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleReassign(task)}>
+                                <DropdownMenuItem onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleReassign(task);
+                                }}>
                                   <User className="mr-2 h-4 w-4" />
                                   Reassign
                                 </DropdownMenuItem>
-                                <DropdownMenuItem onClick={() => handleDeleteConfirm(task)} className="text-destructive">
+                                <DropdownMenuItem onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteConfirm(task);
+                                }} className="text-destructive">
                                   <Trash2 className="mr-2 h-4 w-4" />
                                   Delete
                                 </DropdownMenuItem>
                               </DropdownMenuContent>
                             </DropdownMenu>
                           </div>
-
 
                           <div className="flex flex-wrap gap-2">
                             <motion.div
@@ -1127,19 +1205,7 @@ const Tasks = () => {
                             </p>
                           )}
 
-                          {/* Location */}
-                          <motion.div 
-                            className="flex items-start gap-2"
-                            whileHover={{ x: 5 }}
-                          >
-                            <MapPin className="h-4 w-4 text-muted-foreground flex-shrink-0 mt-0.5" />
-                            <div>
-                              <p className="text-xs font-medium">Location</p>
-                              <p className="text-sm">{task.location}</p>
-                            </div>
-                          </motion.div>
-
-                          {/* Assignee */}
+                          {/* Assignees */}
                           <motion.div 
                             className="flex items-start gap-2"
                             whileHover={{ x: 5 }}
@@ -1147,13 +1213,13 @@ const Tasks = () => {
                             <div className="h-4 w-4 flex-shrink-0 mt-0.5">
                               <Avatar className="h-4 w-4 ring-2 ring-primary/20">
                                 <AvatarFallback className="bg-gradient-to-br from-primary to-primary/60 text-white text-[10px]">
-                                  {task.assigneeInitials}
+                                  {getInitials(task.assignees?.[0] || "")}
                                 </AvatarFallback>
                               </Avatar>
                             </div>
                             <div>
-                              <p className="text-xs font-medium">Assignee</p>
-                              <p className="text-sm">{task.assignee}</p>
+                              <p className="text-xs font-medium">Assignees</p>
+                              <p className="text-sm">{assigneesLabel(task.assignees) || "—"}</p>
                             </div>
                           </motion.div>
 
@@ -1215,20 +1281,19 @@ const Tasks = () => {
                     )}
                   </div>
 
-                  {/* Tablet/Desktop View - Table */}
-                  <div className="hidden sm:block w-full overflow-x-auto">
+                  {/* Desktop View - Table */}
+                  <div className="hidden sm:block overflow-x-auto">
                     <Table>
                       <TableHeader>
-                        <TableRow className="bg-muted/30">
-                          <TableHead className="text-xs md:text-sm w-[10%]">Task ID</TableHead>
-                          <TableHead className="text-xs md:text-sm w-[20%]">Title</TableHead>
-                          <TableHead className="text-xs md:text-sm w-[15%]">Assignee</TableHead>
-                          <TableHead className="text-xs md:text-sm w-[15%]">Location</TableHead>
-                          <TableHead className="text-xs md:text-sm w-[10%]">Priority</TableHead>
-                          <TableHead className="text-xs md:text-sm w-[10%]">Status</TableHead>
-                          <TableHead className="text-xs md:text-sm w-[10%]">Due</TableHead>
-                          <TableHead className="text-right text-xs md:text-sm w-[10%]">Print</TableHead>
-                          <TableHead className="text-right text-xs md:text-sm w-[10%]">Actions</TableHead>
+                        <TableRow className="bg-muted/50">
+                          <TableHead className="w-[100px]">Task ID</TableHead>
+                          <TableHead>Title</TableHead>
+                          <TableHead>Assignees</TableHead>
+                          <TableHead>Priority</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Due</TableHead>
+                          <TableHead className="text-right">Print</TableHead>
+                          <TableHead className="text-right w-[50px]">Actions</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
@@ -1243,54 +1308,40 @@ const Tasks = () => {
                               whileHover={{ 
                                 scale: 1.01,
                                 backgroundColor: "rgba(59, 130, 246, 0.05)",
-                                boxShadow: "0 4px 12px rgba(0,0,0,0.1)"
+                                transition: { type: "spring", stiffness: 400, damping: 17 }
                               }}
-                              onHoverStart={() => setHoveredTask(task.id)}
-                              onHoverEnd={() => setHoveredTask(null)}
-                              className="cursor-pointer transition-all duration-300"
+                              className="border-b transition-colors hover:bg-muted/50 cursor-pointer"
+                              onClick={() => handleViewDetails(task)}
                             >
-                              <TableCell className="font-mono text-xs md:text-sm text-muted-foreground">
-                                {getDisplayTaskId(task.id)}
-                              </TableCell>
-                              <TableCell>
-                                <div className="min-w-0">
-                                  <p className="font-medium text-sm md:text-base truncate max-w-[200px] lg:max-w-[250px] flex items-center gap-2">
-                                    {task.title}
-                                    {hoveredTask === task.id && (
-                                      <motion.span
-                                        initial={{ scale: 0 }}
-                                        animate={{ scale: 1 }}
-                                        className="inline-block w-1.5 h-1.5 bg-primary rounded-full"
-                                      />
-                                    )}
-                                  </p>
-                                  <p className="text-xs text-muted-foreground truncate max-w-[200px] lg:max-w-[250px]">
-                                    {task.description}
-                                  </p>
+                              <TableCell className="font-mono text-xs md:text-sm">
+                                <div className="flex items-center gap-2">
+                                  {getDisplayTaskId(task.id)}
+                                  {hoveredTask === task.id && (
+                                    <motion.span
+                                      initial={{ scale: 0 }}
+                                      animate={{ scale: 1 }}
+                                      className="inline-block w-1.5 h-1.5 bg-primary rounded-full"
+                                    />
+                                  )}
                                 </div>
+                              </TableCell>
+                              <TableCell className="font-medium text-xs md:text-sm max-w-[200px] truncate">
+                                {task.title}
                               </TableCell>
                               <TableCell>
                                 <div className="flex items-center gap-2">
                                   <motion.div
                                     whileHover={{ scale: 1.1, rotate: 5 }}
-                                    transition={{ type: "spring" as const, stiffness: 300, damping: 10 }}
+                                    transition={{ type: "spring", stiffness: 300, damping: 10 }}
                                   >
-                                    <Avatar className="h-6 w-6 md:h-7 md:w-7 flex-shrink-0 ring-2 ring-primary/20">
+                                    <Avatar className="h-6 w-6 ring-2 ring-primary/20">
                                       <AvatarFallback className="bg-gradient-to-br from-primary to-primary/60 text-white text-xs">
-                                        {task.assigneeInitials}
+                                        {getInitials(task.assignees?.[0] || "")}
                                       </AvatarFallback>
                                     </Avatar>
                                   </motion.div>
-                                  <span className="text-sm md:text-base truncate max-w-[120px] lg:max-w-[150px]">
-                                    {task.assignee}
-                                  </span>
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center gap-1 text-sm md:text-base text-muted-foreground">
-                                  <MapPin className="h-3 w-3 md:h-3.5 md:w-3.5 flex-shrink-0" />
-                                  <span className="truncate max-w-[120px] lg:max-w-[150px]">
-                                    {task.location}
+                                  <span className="text-xs md:text-sm truncate max-w-[150px]">
+                                    {assigneesLabel(task.assignees)}
                                   </span>
                                 </div>
                               </TableCell>
@@ -1345,29 +1396,52 @@ const Tasks = () => {
                                       whileHover={{ scale: 1.1 }}
                                       whileTap={{ scale: 0.9 }}
                                     >
-                                      <Button variant="ghost" size="icon" className="h-8 w-8">
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8"
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
                                         <MoreHorizontal className="h-4 w-4" />
                                       </Button>
                                     </motion.div>
                                   </DropdownMenuTrigger>
                                   <DropdownMenuContent align="end">
-                                    <DropdownMenuItem onClick={() => handleViewDetails(task)}>
+                                    <DropdownMenuItem onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleViewDetails(task);
+                                    }}>
                                       <Eye className="mr-2 h-4 w-4" />
                                       View Details
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => void handlePrintTask(task)}>
+                                    <DropdownMenuItem onClick={(e) => {
+                                      e.stopPropagation();
+                                      void handlePrintTask(task);
+                                    }}>
                                       <Printer className="mr-2 h-4 w-4" />
                                       Print
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleEditTask(task)}>
+                                    <DropdownMenuItem onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleEditTask(task);
+                                    }}>
                                       <Edit className="mr-2 h-4 w-4" />
                                       Edit Task
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleReassign(task)}>
+                                    <DropdownMenuItem onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleReassign(task);
+                                    }}>
                                       <User className="mr-2 h-4 w-4" />
                                       Reassign
                                     </DropdownMenuItem>
-                                    <DropdownMenuItem onClick={() => handleDeleteConfirm(task)} className="text-destructive">
+                                    <DropdownMenuItem
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteConfirm(task);
+                                      }}
+                                      className="text-destructive"
+                                    >
                                       <Trash2 className="mr-2 h-4 w-4" />
                                       Delete
                                     </DropdownMenuItem>
@@ -1377,6 +1451,32 @@ const Tasks = () => {
                             </motion.tr>
                           ))}
                         </AnimatePresence>
+                        
+                        {filteredTasks.length === 0 && (
+                          <TableRow>
+                            <TableCell colSpan={8} className="text-center py-8">
+                              <motion.div 
+                                className="flex flex-col items-center justify-center"
+                                initial={{ opacity: 0 }}
+                                animate={{ opacity: 1 }}
+                              >
+                                <div className="flex justify-center mb-3">
+                                  <motion.div 
+                                    className="h-12 w-12 rounded-full bg-muted flex items-center justify-center"
+                                    animate={{ scale: [1, 1.1, 1] }}
+                                    transition={{ duration: 2, repeat: Infinity }}
+                                  >
+                                    <FileText className="h-6 w-6 text-muted-foreground" />
+                                  </motion.div>
+                                </div>
+                                <p className="text-sm text-muted-foreground">No tasks found</p>
+                                <p className="text-xs text-muted-foreground mt-1">
+                                  Try adjusting your filters or create a new task
+                                </p>
+                              </motion.div>
+                            </TableCell>
+                          </TableRow>
+                        )}
                       </TableBody>
                     </Table>
                   </div>
@@ -1422,18 +1522,7 @@ const Tasks = () => {
                   className="space-y-1.5"
                   whileHover={{ x: 5 }}
                 >
-                  <label className="text-xs sm:text-sm font-medium">Location</label>
-                  <div className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground">
-                    <MapPin className="h-3.5 w-3.5 sm:h-4 sm:w-4 flex-shrink-0" />
-                    <span className="break-words">{selectedTask.location}</span>
-                  </div>
-                </motion.div>
-                
-                <motion.div 
-                  className="space-y-1.5"
-                  whileHover={{ x: 5 }}
-                >
-                  <label className="text-xs sm:text-sm font-medium">Assignee</label>
+                  <label className="text-xs sm:text-sm font-medium">Assignees</label>
                   <div className="flex items-center gap-2">
                     <motion.div
                       whileHover={{ scale: 1.1, rotate: 5 }}
@@ -1441,11 +1530,11 @@ const Tasks = () => {
                     >
                       <Avatar className="h-5 w-5 sm:h-6 sm:w-6 ring-2 ring-primary/20">
                         <AvatarFallback className="bg-gradient-to-br from-primary to-primary/60 text-white text-[10px] sm:text-xs">
-                          {selectedTask.assigneeInitials}
+                          {getInitials(selectedTask.assignees?.[0] || "")}
                         </AvatarFallback>
                       </Avatar>
                     </motion.div>
-                    <span className="text-xs sm:text-sm">{selectedTask.assignee}</span>
+                    <span className="text-xs sm:text-sm">{assigneesLabel(selectedTask.assignees) || "—"}</span>
                   </div>
                 </motion.div>
                 
@@ -1604,32 +1693,53 @@ const Tasks = () => {
                 />
               </div>
 
-              {/* Location & Assignee */}
-              <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
-                <div className="flex-1 min-w-0">
-                  <label className="block text-xs sm:text-sm font-medium mb-1.5">Location</label>
-                  <input
-                    type="text"
-                    value={editFormData.location}
-                    onChange={(e) => setEditFormData({ ...editFormData, location: e.target.value })}
-                    className="w-full rounded-lg border px-3 py-2 text-sm sm:text-base focus:ring-2 focus:ring-primary/20 transition-all"
-                  />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <label className="block text-xs sm:text-sm font-medium mb-1.5">Assignee</label>
-                  <select
-                    value={editFormData.assignee}
-                    onChange={(e) => setEditFormData({ ...editFormData, assignee: e.target.value })}
-                    className="w-full rounded-lg border px-3 py-2 text-sm sm:text-base bg-white focus:ring-2 focus:ring-primary/20 transition-all"
-                  >
-                    <option value="">Select assignee</option>
-                    {employees.map((emp) => (
-                      <option key={emp.id} value={emp.name}>
-                        {emp.name}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              {/* Assignees */}
+              <div>
+                <label className="block text-xs sm:text-sm font-medium mb-1.5">Assignees</label>
+                <Popover open={editAssigneesOpen} onOpenChange={setEditAssigneesOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full justify-between h-10"
+                    >
+                      <span className="truncate">
+                        {editFormData.assignees.length > 0
+                          ? editFormData.assignees.join(", ")
+                          : "Select assignees"}
+                      </span>
+                      <ChevronsUpDown className="h-4 w-4 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search employees..." />
+                      <CommandList>
+                        <CommandEmpty>No employee found.</CommandEmpty>
+                        <CommandGroup>
+                          {employees.map((emp) => {
+                            const isSelected = editFormData.assignees.includes(emp.name);
+                            return (
+                              <CommandItem
+                                key={emp.id}
+                                onSelect={() => {
+                                  const next = isSelected
+                                    ? editFormData.assignees.filter((n) => n !== emp.name)
+                                    : [...editFormData.assignees, emp.name];
+                                  setEditFormData({ ...editFormData, assignees: next });
+                                }}
+                                className="flex items-center justify-between"
+                              >
+                                <span className="truncate">{emp.name}</span>
+                                <Check className={"h-4 w-4 " + (isSelected ? "opacity-100" : "opacity-0")} />
+                              </CommandItem>
+                            );
+                          })}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
 
               {/* Priority, Status, Due Date */}
@@ -1742,7 +1852,7 @@ const Tasks = () => {
               Reassign Task
             </DialogTitle>
             <DialogDescription className="text-xs sm:text-sm">
-              Change the task assignee
+              Change the task assignees
             </DialogDescription>
           </DialogHeader>
           {selectedTask && (
@@ -1757,7 +1867,7 @@ const Tasks = () => {
                 <p className="text-sm sm:text-base">{selectedTask.title}</p>
               </div>
               <div className="rounded-lg bg-gradient-to-r from-muted/30 to-muted/10 p-3 sm:p-4 space-y-1">
-                <p className="text-xs sm:text-sm font-medium">Current Assignee</p>
+                <p className="text-xs sm:text-sm font-medium">Current Assignees</p>
                 <div className="flex items-center gap-2 mt-1">
                   <motion.div
                     whileHover={{ scale: 1.1, rotate: 5 }}
@@ -1765,27 +1875,59 @@ const Tasks = () => {
                   >
                     <Avatar className="h-5 w-5 sm:h-6 sm:w-6 ring-2 ring-primary/20">
                       <AvatarFallback className="bg-gradient-to-br from-primary to-primary/60 text-white text-[10px] sm:text-xs">
-                        {selectedTask.assigneeInitials}
+                        {getInitials(selectedTask.assignees?.[0] || "")}
                       </AvatarFallback>
                     </Avatar>
                   </motion.div>
-                  <span className="text-xs sm:text-sm">{selectedTask.assignee}</span>
+                  <span className="text-xs sm:text-sm">{assigneesLabel(selectedTask.assignees) || "—"}</span>
                 </div>
               </div>
               <div className="space-y-1.5">
-                <label className="block text-xs sm:text-sm font-medium mb-1.5">New Assignee</label>
-                <select
-                  value={editFormData.assignee}
-                  onChange={(e) => setEditFormData({ ...editFormData, assignee: e.target.value })}
-                  className="w-full rounded-lg border px-3 py-2 text-sm sm:text-base bg-white focus:ring-2 focus:ring-primary/20 transition-all"
-                >
-                  <option value="John Doe">John Doe</option>
-                  <option value="Sarah Miller">Sarah Miller</option>
-                  <option value="Mike Johnson">Mike Johnson</option>
-                  <option value="Emily Brown">Emily Brown</option>
-                  <option value="Alex Wilson">Alex Wilson</option>
-                  <option value="Tom Garcia">Tom Garcia</option>
-                </select>
+                <label className="block text-xs sm:text-sm font-medium mb-1.5">New Assignees</label>
+                <Popover open={reassignAssigneesOpen} onOpenChange={setReassignAssigneesOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full justify-between h-10"
+                    >
+                      <span className="truncate">
+                        {editFormData.assignees.length > 0
+                          ? editFormData.assignees.join(", ")
+                          : "Select assignees"}
+                      </span>
+                      <ChevronsUpDown className="h-4 w-4 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search employees..." />
+                      <CommandList>
+                        <CommandEmpty>No employee found.</CommandEmpty>
+                        <CommandGroup>
+                          {employees.map((emp) => {
+                            const isSelected = editFormData.assignees.includes(emp.name);
+                            return (
+                              <CommandItem
+                                key={emp.id}
+                                onSelect={() => {
+                                  const next = isSelected
+                                    ? editFormData.assignees.filter((n) => n !== emp.name)
+                                    : [...editFormData.assignees, emp.name];
+                                  setEditFormData({ ...editFormData, assignees: next });
+                                }}
+                                className="flex items-center justify-between"
+                              >
+                                <span className="truncate">{emp.name}</span>
+                                <Check className={"h-4 w-4 " + (isSelected ? "opacity-100" : "opacity-0")} />
+                              </CommandItem>
+                            );
+                          })}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
               </div>
             </motion.div>
           )}

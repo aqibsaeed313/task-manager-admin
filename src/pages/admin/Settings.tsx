@@ -8,7 +8,6 @@ import { Camera, User } from "lucide-react";
 import { apiFetch } from "@/lib/admin/apiClient";
 import { useQuery } from "@tanstack/react-query";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { getAuthState } from "@/lib/auth";
 
 type SettingsState = {
   companyName: string;
@@ -74,29 +73,22 @@ export default function Settings() {
     const formData = new FormData();
     formData.append("avatar", file);
 
-    const auth = getAuthState();
-    const token = auth.token;
-
-    console.log("Admin auth state:", auth);
-    console.log("Token:", token);
-
-    const API_BASE = "https://task.se7eninc.com";
-
     try {
-      const res = await fetch(`${API_BASE}/api/settings/avatar`, {
-        method: "POST",
-        body: formData,
-        headers: {
-          Authorization: `Bearer ${token || ""}`,
-        },
-      });
+      const data = await apiFetch<{ avatarDataUrl?: string; avatarUrl?: string }>(
+        "/api/settings/avatar",
+        {
+          method: "POST",
+          body: formData,
+        }
+      );
 
-      if (!res.ok) throw new Error("Upload failed");
-
-      const data = await res.json();
       if (data.avatarDataUrl || data.avatarUrl) {
         const newAvatarUrl = data.avatarDataUrl || data.avatarUrl;
         setSettings((prev) => ({ ...prev, avatarUrl: newAvatarUrl }));
+        localStorage.setItem(
+          SETTINGS_STORAGE_KEY,
+          JSON.stringify({ ...loadSettings(), avatarUrl: newAvatarUrl })
+        );
       }
       await backendSettingsQuery.refetch();
     } catch (err) {
@@ -170,6 +162,7 @@ export default function Settings() {
           autoLogoutMinutes: settings.autoLogoutMinutes,
           fullName: settings.fullName,
           email: settings.email,
+          avatarUrl: settings.avatarUrl,
         }),
       });
       localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));

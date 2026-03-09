@@ -69,7 +69,6 @@ interface Employee {
   email: string;
   phone: string;
   role: string;
-  department: string;
   status: "active" | "away" | "offline";
   location: string;
   joinDate: string;
@@ -87,7 +86,6 @@ function normalizeEmployee(e: EmployeeApi): Employee {
     email: e.email,
     phone: e.phone,
     role: e.role,
-    department: e.department,
     status: e.status,
     location: e.location,
     joinDate: e.joinDate,
@@ -112,7 +110,6 @@ const createEmployeeSchema = z.object({
   email: z.string().min(1, "Email is required").email("Invalid email"),
   phone: z.string().min(1, "Phone is required"),
   role: z.string().min(1, "Role is required"),
-  department: z.string().min(1, "Department is required"),
   status: z.enum(["active", "away", "offline"]),
   location: z.string().min(1, "Location is required"),
   joinDate: z.string().min(1, "Join date is required"),
@@ -254,7 +251,6 @@ const statsVariants = {
 
 export default function Employees() {
   const [searchQuery, setSearchQuery] = useState("");
-  const [departmentFilter, setDepartmentFilter] = useState<string>("all");
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [isViewOpen, setIsViewOpen] = useState(false);
@@ -319,7 +315,6 @@ export default function Employees() {
       email: "",
       phone: "",
       role: "",
-      department: "",
       status: "active",
       location: "",
       joinDate: "",
@@ -333,7 +328,6 @@ export default function Employees() {
       email: "",
       phone: "",
       role: "",
-      department: "",
       status: "active",
       location: "",
       joinDate: "",
@@ -346,7 +340,6 @@ export default function Employees() {
       email: values.email,
       phone: values.phone,
       role: values.role,
-      department: values.department,
       status: values.status,
       location: values.location,
       joinDate: values.joinDate,
@@ -383,7 +376,6 @@ export default function Employees() {
       email: employee.email,
       phone: employee.phone,
       role: employee.role,
-      department: employee.department,
       status: employee.status,
       location: employee.location,
       joinDate: employee.joinDate,
@@ -440,23 +432,17 @@ export default function Employees() {
     });
   };
 
-  const departments = useMemo(() => {
-    return [...new Set(employees.map((e) => e.department))];
-  }, [employees]);
-
   const filteredEmployees = useMemo(() => {
     return employees.filter((employee) => {
       const matchesSearch =
         employee.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         employee.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
         employee.role.toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesDepartment =
-        departmentFilter === "all" || employee.department === departmentFilter;
       const matchesStatus =
         statusFilter === "all" || employee.status === statusFilter;
-      return matchesSearch && matchesDepartment && matchesStatus;
+      return matchesSearch && matchesStatus;
     });
-  }, [employees, departmentFilter, searchQuery, statusFilter]);
+  }, [employees, searchQuery, statusFilter]);
 
   return (
     <motion.div
@@ -525,21 +511,6 @@ export default function Employees() {
             }
           }}
         >
-          <motion.div variants={itemVariants}>
-            <Select value={departmentFilter} onValueChange={setDepartmentFilter}>
-              <SelectTrigger className="w-[160px] sm:w-[160px]">
-                <SelectValue placeholder="Department" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All Departments</SelectItem>
-                {departments.map((dept) => (
-                  <SelectItem key={dept} value={dept}>
-                    {dept}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </motion.div>
           <motion.div variants={itemVariants}>
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className="w-[130px] sm:w-[130px]">
@@ -612,11 +583,11 @@ export default function Employees() {
             </motion.div>
             <h3 className="text-lg font-medium text-foreground mb-2">No employees found</h3>
             <p className="text-sm text-muted-foreground mb-4">
-              {searchQuery || departmentFilter !== "all" || statusFilter !== "all" 
+              {searchQuery || statusFilter !== "all" 
                 ? "Try adjusting your filters" 
                 : "Get started by adding your first employee"}
             </p>
-            {(searchQuery || departmentFilter !== "all" || statusFilter !== "all") && (
+            {(searchQuery || statusFilter !== "all") && (
               <motion.div
                 variants={buttonVariants}
                 whileHover="hover"
@@ -626,11 +597,10 @@ export default function Employees() {
                   variant="outline" 
                   onClick={() => {
                     setSearchQuery("");
-                    setDepartmentFilter("all");
                     setStatusFilter("all");
                   }}
                 >
-                  Clear Filters
+                  Clear filters
                 </Button>
               </motion.div>
             )}
@@ -751,14 +721,6 @@ export default function Employees() {
                   animate={{ opacity: 1 }}
                   transition={{ delay: index * 0.1 + 0.3 }}
                 >
-                  <motion.div
-                    whileHover={{ scale: 1.05 }}
-                    transition={{ type: "spring", stiffness: 400, damping: 30 }}
-                  >
-                    <Badge variant="secondary" className="text-xs">
-                      {employee.department}
-                    </Badge>
-                  </motion.div>
                   <motion.span
                     className={cn(
                       "text-xs font-medium flex items-center gap-1.5",
@@ -932,34 +894,6 @@ export default function Employees() {
 
                   <FormField
                     control={form.control}
-                    name="department"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Department</FormLabel>
-                        <FormControl>
-                          <Input placeholder="e.g. Operations" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="location"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Location</FormLabel>
-                        <FormControl>
-                          <Input placeholder="e.g. Main Office" {...field} />
-                        </FormControl>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
                     name="status"
                     render={({ field }) => (
                       <FormItem>
@@ -976,6 +910,20 @@ export default function Employees() {
                             <SelectItem value="offline">Offline</SelectItem>
                           </SelectContent>
                         </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="location"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Location</FormLabel>
+                        <FormControl>
+                          <Input placeholder="e.g. Main Office" {...field} />
+                        </FormControl>
                         <FormMessage />
                       </FormItem>
                     )}
@@ -1081,8 +1029,8 @@ export default function Employees() {
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: 0.2 }}
                 >
-                  <p className="text-muted-foreground">Department</p>
-                  <p className="text-foreground">{selectedEmployee.department}</p>
+                  <p className="text-muted-foreground">Location</p>
+                  <p className="text-foreground">{selectedEmployee.location}</p>
                 </motion.div>
                 <motion.div 
                   className="space-y-1"
@@ -1090,23 +1038,14 @@ export default function Employees() {
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: 0.25 }}
                 >
-                  <p className="text-muted-foreground">Location</p>
-                  <p className="text-foreground">{selectedEmployee.location}</p>
+                  <p className="text-muted-foreground">Status</p>
+                  <p className="text-foreground">{statusLabels[selectedEmployee.status]}</p>
                 </motion.div>
                 <motion.div 
                   className="space-y-1"
                   initial={{ opacity: 0, x: -20 }}
                   animate={{ opacity: 1, x: 0 }}
                   transition={{ delay: 0.3 }}
-                >
-                  <p className="text-muted-foreground">Status</p>
-                  <p className="text-foreground">{statusLabels[selectedEmployee.status]}</p>
-                </motion.div>
-                <motion.div 
-                  className="space-y-1"
-                  initial={{ opacity: 0, x: 20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ delay: 0.35 }}
                 >
                   <p className="text-muted-foreground">Join Date</p>
                   <p className="text-foreground">{new Date(selectedEmployee.joinDate).toLocaleDateString()}</p>
@@ -1208,20 +1147,6 @@ export default function Employees() {
                       <FormLabel>Role</FormLabel>
                       <FormControl>
                         <Input placeholder="e.g. Field Technician" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={editForm.control}
-                  name="department"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Department</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g. Operations" {...field} />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
