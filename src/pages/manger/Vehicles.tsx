@@ -96,6 +96,16 @@ type VehicleApi = Omit<Vehicle, "id"> & {
   _id: string;
 };
 
+const getInitials = (name: string) => {
+  return String(name || "")
+    .split(" ")
+    .filter(Boolean)
+    .map((n) => n[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+};
+
 function normalizeVehicle(v: VehicleApi): Vehicle {
   const result = {
     id: v._id,
@@ -200,12 +210,7 @@ export default function Vehicles() {
               .map((u) => ({
                 id: u.id,
                 name: u.name,
-                initials: u.name
-                  .split(" ")
-                  .map((n) => n[0])
-                  .slice(0, 2)
-                  .join("")
-                  .toUpperCase(),
+                initials: getInitials(u.name),
                 email: u.email,
                 status: "active" as const,
               }));

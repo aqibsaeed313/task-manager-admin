@@ -96,6 +96,16 @@ const statusClasses = {
 
 const pieColors = ["#22c55e", "#f59e0b", "#94a3b8", "#ef4444", "#3b82f6"]; 
 
+const getInitials = (name: string) => {
+  return String(name || "")
+    .split(" ")
+    .filter(Boolean)
+    .map((n) => n[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+};
+
 const toDateOnly = (value: string) => {
   const v = String(value || "").trim();
   if (!v) return "";
@@ -281,12 +291,7 @@ const Vehicles = () => {
               .map((u) => ({
                 id: u.id,
                 name: u.name,
-                initials: u.name
-                  .split(" ")
-                  .map((n) => n[0])
-                  .slice(0, 2)
-                  .join("")
-                  .toUpperCase(),
+                initials: getInitials(u.name),
                 email: u.email,
                 status: "active" as const,
               }));

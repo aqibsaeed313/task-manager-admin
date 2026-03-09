@@ -235,7 +235,7 @@ const Users = () => {
   } = form;
 
   function getInitials(name: string) {
-    return name
+    return String(name || "")
       .split(" ")
       .map((n) => n[0])
       .slice(0, 2)

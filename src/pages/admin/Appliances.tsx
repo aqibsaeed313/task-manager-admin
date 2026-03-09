@@ -79,6 +79,16 @@ interface User {
 
 const APPLIANCES_STORAGE_KEY = "appliances";
 
+const getInitials = (name: string) => {
+  return String(name || "")
+    .split(" ")
+    .filter(Boolean)
+    .map((n) => n[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+};
+
 // Enhanced status classes with beautiful gradients
 const statusClasses = {
   active: "bg-gradient-to-r from-success/20 to-success/10 text-success border-success/20 shadow-sm",
@@ -305,12 +315,7 @@ export default function Appliances() {
               .map((u) => ({
                 id: u.id,
                 name: u.name,
-                initials: u.name
-                  .split(" ")
-                  .map((n) => n[0])
-                  .slice(0, 2)
-                  .join("")
-                  .toUpperCase(),
+                initials: getInitials(u.name),
                 email: u.email,
                 status: "active" as const,
               }));

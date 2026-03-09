@@ -77,7 +77,7 @@ function normalizeMessage(m: MessageApi): Message {
 }
 
 function getInitials(name: string): string {
-  return name
+  return String(name || "")
     .split(" ")
     .map((n) => n[0])
     .slice(0, 2)
