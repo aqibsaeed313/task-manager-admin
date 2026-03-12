@@ -476,7 +476,7 @@ const Employees = () => {
       setApiError(null);
       
       // Call the backend endpoint to reset employee password
-      await apiFetch(`/api/employees/${selectedEmployee.id}/reset-password`, {
+      await apiFetch(`/api/employees/$/reset-password`, {
         method: "POST",
         body: JSON.stringify({
           newPassword: resetPasswordData.newPassword,
@@ -1163,7 +1163,6 @@ const Employees = () => {
                                     />
                                   )}
                                 </p>
-                                <p className="text-xs text-muted-foreground">{employee.id}</p>
                               </div>
                             </div>
                             <DropdownMenu>
@@ -1364,7 +1363,6 @@ const Employees = () => {
                                         />
                                       )}
                                     </p>
-                                    <p className="text-xs text-muted-foreground">{employee.id}</p>
                                   </div>
                                 </div>
                               </TableCell>
@@ -1514,7 +1512,6 @@ const Employees = () => {
                   </motion.div>
                   <div>
                     <p className="text-base sm:text-lg font-semibold break-words">{selectedEmployee.name}</p>
-                    <p className="text-xs sm:text-sm text-muted-foreground">{selectedEmployee.id}</p>
                   </div>
                 </div>
                 <Badge className={`${statusClasses[selectedEmployee.status]} text-xs sm:text-sm self-start sm:self-center flex items-center gap-1`} variant="secondary">
@@ -1810,7 +1807,6 @@ const Employees = () => {
               <div className="rounded-lg bg-gradient-to-br from-muted/30 to-muted/10 p-3 sm:p-4">
                 <p className="text-xs sm:text-sm font-medium mb-1">Employee</p>
                 <p className="text-sm sm:text-base font-medium">{selectedEmployee.name}</p>
-                <p className="text-xs sm:text-sm text-muted-foreground mt-1">{selectedEmployee.id}</p>
               </div>
               <div>
                 <label className="block text-xs sm:text-sm font-medium mb-1.5">Shift Details</label>
@@ -1876,9 +1872,6 @@ const Employees = () => {
               transition={{ delay: 0.2 }}
             >
               <p className="font-medium break-words">{selectedEmployee.name}</p>
-              <p className="text-muted-foreground text-xs sm:text-sm break-words mt-1">
-                {selectedEmployee.id}
-              </p>
             </motion.div>
           )}
           
@@ -1937,9 +1930,6 @@ const Employees = () => {
               transition={{ delay: 0.2 }}
             >
               <p className="font-medium break-words">{selectedEmployee.name}</p>
-              <p className="text-muted-foreground text-xs sm:text-sm break-words mt-1">
-                {selectedEmployee.id}
-              </p>
             </motion.div>
           )}
           
