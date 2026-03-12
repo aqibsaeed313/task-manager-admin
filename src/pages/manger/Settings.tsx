@@ -36,7 +36,7 @@ type SettingsItem = {
 export default function Settings() {
   const queryClient = useQueryClient();
 
-  const MAX_AVATAR_BYTES = 15 * 1024 * 1024;
+  const MAX_AVATAR_BYTES = 10 * 1024 * 1024;
 
   const settingsQuery = useQuery({
     queryKey: ["settings"],
@@ -214,8 +214,19 @@ export default function Settings() {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Failed to create canvas context");
 
-    canvas.width = Math.max(1, Math.floor(pixelCrop.width));
-    canvas.height = Math.max(1, Math.floor(pixelCrop.height));
+    // Limit max dimensions to 512x512 for avatars to keep file size small
+    const maxSize = 512;
+    let targetWidth = Math.floor(pixelCrop.width);
+    let targetHeight = Math.floor(pixelCrop.height);
+    
+    if (targetWidth > maxSize || targetHeight > maxSize) {
+      const ratio = Math.min(maxSize / targetWidth, maxSize / targetHeight);
+      targetWidth = Math.floor(targetWidth * ratio);
+      targetHeight = Math.floor(targetHeight * ratio);
+    }
+
+    canvas.width = Math.max(1, targetWidth);
+    canvas.height = Math.max(1, targetHeight);
 
     ctx.drawImage(
       image,
@@ -225,18 +236,19 @@ export default function Settings() {
       pixelCrop.height,
       0,
       0,
-      pixelCrop.width,
-      pixelCrop.height,
+      canvas.width,
+      canvas.height,
     );
 
+    // Use JPEG with 0.8 quality for smaller file size (PNG is lossless and too large)
     const blob: Blob = await new Promise((resolve, reject) => {
       canvas.toBlob(
         (b) => {
           if (!b) reject(new Error("Failed to export cropped image"));
           else resolve(b);
         },
-        "image/png",
-        0.92,
+        "image/jpeg",
+        0.8,
       );
     });
 
@@ -255,7 +267,7 @@ export default function Settings() {
       toast({ title: "Uploading", description: "Uploading profile picture..." });
 
       const blob = await getCroppedBlob(pendingImageSrc, croppedAreaPixels);
-      const file = new File([blob], pendingFileName || "avatar.png", { type: "image/png" });
+      const file = new File([blob], "avatar.jpg", { type: "image/jpeg" });
 
       avatarUploadMutation.mutate(file, {
         onSuccess: (data) => {
@@ -281,6 +293,13 @@ export default function Settings() {
             title: "Upload failed",
             description: err instanceof Error ? err.message : "Failed to upload image",
           });
+          // Close modal on error
+          setIsCropOpen(false);
+          setPendingImageSrc("");
+          setPendingFileName("");
+          setZoom(1);
+          setCrop({ x: 0, y: 0 });
+          setCroppedAreaPixels(null);
         },
         onSettled: () => {
           if (fileInputRef.current) fileInputRef.current.value = "";
@@ -300,8 +319,8 @@ export default function Settings() {
 
     if (file.size > MAX_AVATAR_BYTES) {
       setAvatarUploadStatus("error");
-      setAvatarUploadMessage("Image is too large. Maximum allowed size is 15MB.");
-      toast({ title: "File too large", description: "Please select an image up to 15MB." });
+      setAvatarUploadMessage("Image is too large. Maximum allowed size is 10MB.");
+      toast({ title: "File too large", description: "Please select an image up to 10MB." });
       if (fileInputRef.current) fileInputRef.current.value = "";
       return;
     }
@@ -453,6 +472,9 @@ export default function Settings() {
             <p className="font-medium text-foreground">Profile Picture</p>
             <p className="text-sm text-muted-foreground">
               Click the camera icon to upload a new photo
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Max size: 10MB (JPEG, PNG, GIF)
             </p>
             {avatarUploadStatus !== "idle" && (
               <p
