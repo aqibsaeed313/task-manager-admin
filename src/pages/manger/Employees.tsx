@@ -108,7 +108,7 @@ function normalizeEmployee(e: EmployeeApi): Employee {
     location: e.location,
     joinDate: e.joinDate,
     avatar: e.avatar,
-    imageUrl: (e as unknown as { imageUrl?: string }).imageUrl,
+    imageUrl: (e as unknown as { avatarUrl?: string; imageUrl?: string }).avatarUrl || (e as unknown as { imageUrl?: string }).imageUrl,
   };
 }
 
