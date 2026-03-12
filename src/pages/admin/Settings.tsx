@@ -86,7 +86,7 @@ export default function Settings() {
   const [passwordSaving, setPasswordSaving] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const MAX_AVATAR_BYTES = 15 * 1024 * 1024;
+  const MAX_AVATAR_BYTES = 10 * 1024 * 1024;
 
   const [isCropOpen, setIsCropOpen] = useState(false);
   const [pendingImageSrc, setPendingImageSrc] = useState<string>("");
@@ -119,8 +119,19 @@ export default function Settings() {
     const ctx = canvas.getContext("2d");
     if (!ctx) throw new Error("Failed to create canvas context");
 
-    canvas.width = Math.max(1, Math.floor(pixelCrop.width));
-    canvas.height = Math.max(1, Math.floor(pixelCrop.height));
+    // Limit max dimensions to 512x512 for avatars to keep file size small
+    const maxSize = 512;
+    let targetWidth = Math.floor(pixelCrop.width);
+    let targetHeight = Math.floor(pixelCrop.height);
+    
+    if (targetWidth > maxSize || targetHeight > maxSize) {
+      const ratio = Math.min(maxSize / targetWidth, maxSize / targetHeight);
+      targetWidth = Math.floor(targetWidth * ratio);
+      targetHeight = Math.floor(targetHeight * ratio);
+    }
+
+    canvas.width = Math.max(1, targetWidth);
+    canvas.height = Math.max(1, targetHeight);
 
     ctx.drawImage(
       image,
@@ -130,18 +141,19 @@ export default function Settings() {
       pixelCrop.height,
       0,
       0,
-      pixelCrop.width,
-      pixelCrop.height,
+      canvas.width,
+      canvas.height,
     );
 
+    // Use JPEG with 0.8 quality for smaller file size (PNG is lossless and too large)
     const blob: Blob = await new Promise((resolve, reject) => {
       canvas.toBlob(
         (b) => {
           if (!b) reject(new Error("Failed to export cropped image"));
           else resolve(b);
         },
-        "image/png",
-        0.92,
+        "image/jpeg",
+        0.8,
       );
     });
 
@@ -159,7 +171,7 @@ export default function Settings() {
 
     try {
       const blob = await getCroppedBlob(pendingImageSrc, croppedAreaPixels);
-      const file = new File([blob], pendingFileName || "avatar.png", { type: "image/png" });
+      const file = new File([blob], "avatar.jpg", { type: "image/jpeg" });
 
       const formData = new FormData();
       formData.append("avatar", file);
@@ -197,7 +209,7 @@ export default function Settings() {
       let errorMessage = "Failed to upload profile picture. Please try again.";
 
       if (err?.message?.includes("size") || err?.message?.includes("large")) {
-        errorMessage = "Image size is too large. Maximum allowed size is 15MB";
+        errorMessage = "Image size is too large. Maximum allowed size is 10MB";
       } else if (err?.message?.includes("format") || err?.message?.includes("type")) {
         errorMessage = "Invalid image format. Please upload JPEG, PNG, or GIF file.";
       } else if (err?.message) {
@@ -205,6 +217,13 @@ export default function Settings() {
       }
 
       setAvatarUpload({ status: "error", message: errorMessage });
+
+      setIsCropOpen(false);
+      setPendingImageSrc("");
+      setPendingFileName("");
+      setZoom(1);
+      setCrop({ x: 0, y: 0 });
+      setCroppedAreaPixels(null);
     } finally {
       setTimeout(() => {
         setAvatarUpload({ status: "idle", message: null });
@@ -226,11 +245,11 @@ export default function Settings() {
       return;
     }
 
-    // Validate file size (max 15MB)
+    // Validate file size (max 10MB)
     if (file.size > MAX_AVATAR_BYTES) {
       setAvatarUpload({
         status: "error",
-        message: "Image size is too large. Maximum allowed size is 15MB",
+        message: "Image size is too large. Maximum allowed size is 10MB",
       });
       setTimeout(() => setAvatarUpload({ status: "idle", message: null }), 4000);
       return;
@@ -444,7 +463,7 @@ export default function Settings() {
                         : "Click the camera icon to upload"}
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      Max size: 15MB (JPEG, PNG, GIF)
+                      Max size: 10MB (JPEG, PNG, GIF)
                     </p>
                   </div>
                 </div>
