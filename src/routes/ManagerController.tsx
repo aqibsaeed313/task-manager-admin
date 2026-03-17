@@ -15,6 +15,7 @@ console.log("Appliances import:", Appliances);
 import Locations from "@/pages/manger/Locations";
 import Vendors from "@/pages/manger/Vendors";
 import Messages from "@/pages/manger/Messages";
+import Notifications from "@/pages/manger/Notifications";
 import Settings from "@/pages/manger/Settings";
 import DoNotHire from "@/pages/manger/DoNotHire";
 import OnboardingMonitoring from "@/pages/manger/OnboardingMonitoring";
@@ -41,6 +42,7 @@ export default function ManagerController() {
       { path: "onboarding", element: <OnboardingMonitoring /> },
       { path: "reports", element: <Reports /> },
       { path: "messages", element: <Messages /> },
+      { path: "notifications", element: <Notifications /> },
       { path: "settings", element: <Settings /> },
       { path: "*", element: <NotFound /> },
     ],

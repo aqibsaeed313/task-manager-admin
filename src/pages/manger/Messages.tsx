@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from "react";
+import { useLocation } from "react-router-dom";
 import { Button } from "@/components/manger/ui/button";
 import { Input } from "@/components/manger/ui/input";
 import { Badge } from "@/components/manger/ui/badge";
@@ -94,8 +95,24 @@ export default function Messages() {
   const [newMessageContent, setNewMessageContent] = useState("");
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const location = useLocation();
 
   const currentUser = "Manager"; // Current logged in user
+
+  // Handle navigation state - auto-open conversation from header dropdown
+  useEffect(() => {
+    const navState = location.state as { selectedEmployee?: Employee } | null;
+    if (navState?.selectedEmployee) {
+      const emp = navState.selectedEmployee;
+      // Small delay to ensure conversations are loaded first
+      const timer = setTimeout(() => {
+        startConversation(emp);
+        // Clear the state so it doesn't reopen on refresh
+        window.history.replaceState({}, document.title);
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [location.state]);
 
   // Load employees
   const employeesQuery = useQuery({

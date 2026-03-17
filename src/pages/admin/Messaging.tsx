@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, useRef } from "react";
+import { useLocation } from "react-router-dom";
 import { AdminLayout } from "@/components/layout/AdminLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/admin/ui/card";
 import { Button } from "@/components/admin/ui/button";
@@ -99,8 +100,24 @@ export default function Messaging() {
 
   // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const location = useLocation();
 
   const currentUser = "Admin"; // Current logged in user
+
+  // Handle navigation state - auto-open conversation from header dropdown
+  useEffect(() => {
+    const navState = location.state as { selectedEmployee?: Employee } | null;
+    if (navState?.selectedEmployee) {
+      const emp = navState.selectedEmployee;
+      // Small delay to ensure conversations are loaded first
+      const timer = setTimeout(() => {
+        startConversation(emp);
+        // Clear the state so it doesn't reopen on refresh
+        window.history.replaceState({}, document.title);
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [location.state]);
 
   useEffect(() => {
     loadConversations();

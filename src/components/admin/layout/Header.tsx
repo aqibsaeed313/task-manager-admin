@@ -41,10 +41,11 @@ export function Header({ onMenuClick }: HeaderProps) {
     },
   });
 
+  // System notifications (broadcasts only)
   const notificationsQuery = useQuery({
-    queryKey: ["notifications"],
+    queryKey: ["admin-notifications"],
     queryFn: async () => {
-      const res = await apiFetch<{ items?: MessageApi[] } | MessageApi[]>("/api/messages");
+      const res = await apiFetch<{ items?: MessageApi[] } | MessageApi[]>("/api/messages?type=broadcast");
       const items = Array.isArray(res) ? res : Array.isArray(res?.items) ? res.items : [];
       return items
         .map((m: any) => ({
@@ -55,12 +56,24 @@ export function Header({ onMenuClick }: HeaderProps) {
     },
   });
 
+  // Direct messages for message dropdown
+  const messagesQuery = useQuery({
+    queryKey: ["admin-messages-preview"],
+    queryFn: async () => {
+      const user = getAuthState().username || "admin";
+      const res = await apiFetch<{ items: any[] }>(`/api/messages/conversations/${user}`);
+      const items = res?.items || [];
+      return items.slice(0, 4); // Last 4 conversations
+    },
+  });
+
   const notifications = (notificationsQuery.data || [])
     .slice()
     .sort((a, b) => String(b.timestamp || "").localeCompare(String(a.timestamp || "")))
     .slice(0, 4);
 
   const unreadCount = (notificationsQuery.data || []).filter((n) => n.status !== "read").length;
+  const unreadMessageCount = (messagesQuery.data || []).reduce((sum, c) => sum + (c.unreadCount || 0), 0);
 
   const markRead = async (id: string) => {
     try {
@@ -130,7 +143,6 @@ export function Header({ onMenuClick }: HeaderProps) {
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-72 mr-2">
-                <DropdownMenuLabel>Notifications</DropdownMenuLabel>
                 <DropdownMenuSeparator />
                 {notifications.length === 0 ? (
                   <DropdownMenuItem className="text-xs text-muted-foreground">No notifications</DropdownMenuItem>
@@ -141,27 +153,63 @@ export function Header({ onMenuClick }: HeaderProps) {
                       className="flex flex-col items-start gap-0.5 text-xs"
                       onClick={() => {
                         void markRead(n.id);
-                        navigate("/admin/messaging");
+                        navigate("/admin/notifications");
                       }}
                     >
-                      <span className="font-medium">{String(n.title || "Notification")}</span>
-                      <span className="text-muted-foreground line-clamp-2">{String(n.content || "")}</span>
+                      <span className="font-medium line-clamp-2">{String(n.content || "")}</span>
                     </DropdownMenuItem>
                   ))
                 )}
               </DropdownMenuContent>
             </DropdownMenu>
 
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="hidden sm:inline-flex h-9 w-9 rounded-full bg-white/10 hover:bg-white/20"
-              aria-label="Messages"
-              onClick={() => navigate("/admin/messaging")}
-            >
-              <Mail className="h-4 w-4" />
-            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="hidden sm:inline-flex relative h-9 w-9 rounded-full bg-white/10 hover:bg-white/20"
+                  aria-label="Messages"
+                >
+                  <Mail className="h-4 w-4" />
+                  {unreadMessageCount > 0 && (
+                    <Badge className="absolute -top-1 -right-1 h-4 w-4 p-0 flex items-center justify-center bg-red-500 text-[10px]">
+                      {Math.min(unreadMessageCount, 9)}
+                    </Badge>
+                  )}
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-80 mr-2">
+                <DropdownMenuSeparator />
+                {(messagesQuery.data || []).length === 0 ? (
+                  <DropdownMenuItem className="text-xs text-muted-foreground">No messages</DropdownMenuItem>
+                ) : (
+                  (messagesQuery.data || []).slice(0, 4).map((c) => (
+                    <DropdownMenuItem
+                      key={c.employee?.id || c.employee?.name}
+                      className="flex items-start gap-3 py-3 text-xs"
+                      onClick={() => navigate("/admin/messaging", { state: { selectedEmployee: c.employee } })}
+                    >
+                      <div className="h-8 w-8 rounded-full bg-muted flex items-center justify-center flex-shrink-0">
+                        <span className="text-xs font-medium">{c.employee?.initials || c.employee?.name?.slice(0,2).toUpperCase()}</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-xs truncate">{c.employee?.name}</p>
+                        <p className="text-[11px] text-muted-foreground line-clamp-1">
+                          {c.lastMessage?.content || "No messages yet"}
+                        </p>
+                      </div>
+                      {c.unreadCount > 0 && (
+                        <Badge className="h-4 w-4 p-0 flex items-center justify-center bg-red-500 text-[9px] text-white flex-shrink-0">
+                          {c.unreadCount}
+                        </Badge>
+                      )}
+                    </DropdownMenuItem>
+                  ))
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

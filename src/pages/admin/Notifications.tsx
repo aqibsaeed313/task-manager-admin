@@ -27,9 +27,27 @@ import { createResource, listResource } from "@/lib/admin/apiClient";
 interface NotificationItem {
   id: string;
   title: string;
-  message: string;
+  content: string;
+  message?: string;
   audience: "all" | "employees" | "managers";
   createdAt: string;
+}
+
+function formatUSA(dateStr: string) {
+  if (!dateStr) return { date: "-", time: "-" };
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return { date: dateStr, time: "" };
+  const date = d.toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+  const time = d.toLocaleTimeString("en-US", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
+  return { date, time };
 }
 
 export default function Notifications() {
@@ -78,10 +96,11 @@ export default function Notifications() {
     const q = searchQuery.trim().toLowerCase();
     if (!q) return items;
     return items.filter((n) => {
+      const content = n.content || n.message || "";
       return (
-        n.title.toLowerCase().includes(q) ||
-        n.message.toLowerCase().includes(q) ||
-        n.audience.toLowerCase().includes(q)
+        n.title?.toLowerCase().includes(q) ||
+        content.toLowerCase().includes(q) ||
+        n.audience?.toLowerCase().includes(q)
       );
     });
   }, [items, searchQuery]);
@@ -251,33 +270,36 @@ export default function Notifications() {
               <>
                 {/* Mobile View - Cards */}
                 <div className="block sm:hidden space-y-3 p-4">
-                  {filteredNotifications.map((n) => (
-                    <div key={n.id} className="bg-white rounded-lg border p-4 space-y-3">
-                      {/* Header with Icon and Title */}
-                      <div className="flex items-start gap-3">
-                        <div className="h-8 w-8 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0">
-                          <Bell className="h-4 w-4 text-accent" />
+                  {filteredNotifications.map((n) => {
+                    const { date, time } = formatUSA(n.createdAt);
+                    return (
+                      <div key={n.id} className="bg-white rounded-lg border p-4 space-y-3">
+                        {/* Header with Icon and Title */}
+                        <div className="flex items-start gap-3">
+                          <div className="h-8 w-8 rounded-lg bg-accent/10 flex items-center justify-center flex-shrink-0">
+                            <Bell className="h-4 w-4 text-accent" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm truncate">{n.title}</p>
+                            <p className="text-xs text-muted-foreground">{n.id}</p>
+                          </div>
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="font-medium text-sm truncate">{n.title}</p>
-                          <p className="text-xs text-muted-foreground">{n.id}</p>
+
+                        {/* Message */}
+                        <div className="pl-11">
+                          <p className="text-xs text-muted-foreground line-clamp-2">{n.content || n.message}</p>
+                        </div>
+
+                        {/* Footer - Audience and Date/Time */}
+                        <div className="flex items-center justify-between pt-1 border-t">
+                          <Badge variant="secondary" className="text-xs">
+                            {n.audience}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">{date} • {time}</span>
                         </div>
                       </div>
-
-                      {/* Message */}
-                      <div className="pl-11">
-                        <p className="text-xs text-muted-foreground line-clamp-2">{n.message}</p>
-                      </div>
-
-                      {/* Footer - Audience and Date */}
-                      <div className="flex items-center justify-between pt-1 border-t">
-                        <Badge variant="secondary" className="text-xs">
-                          {n.audience}
-                        </Badge>
-                        <span className="text-xs text-muted-foreground">{n.createdAt}</span>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
 
                   {filteredNotifications.length === 0 && (
                     <div className="text-center py-8">
@@ -299,31 +321,36 @@ export default function Notifications() {
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="text-xs md:text-sm w-[50%]">Notification</TableHead>
-                        <TableHead className="text-xs md:text-sm w-[20%]">Audience</TableHead>
-                        <TableHead className="text-xs md:text-sm w-[15%]">Date</TableHead>
+                        <TableHead className="text-xs md:text-sm w-[45%]">Notification</TableHead>
+                        <TableHead className="text-xs md:text-sm w-[15%]">Audience</TableHead>
+                        <TableHead className="text-xs md:text-sm w-[20%]">Date</TableHead>
+                        <TableHead className="text-xs md:text-sm w-[20%]">Time</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {filteredNotifications.map((n) => (
-                        <TableRow key={n.id} className="hover:bg-muted/30">
-                          <TableCell>
-                            <div className="space-y-1">
-                              <p className="font-medium text-sm md:text-base">{n.title}</p>
-                              <p className="text-xs md:text-sm text-muted-foreground line-clamp-2 max-w-2xl">
-                                {n.message}
-                              </p>
-                              <p className="text-xs text-muted-foreground md:hidden">{n.id}</p>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge variant="secondary" className="text-xs md:text-sm">
-                              {n.audience}
-                            </Badge>
-                          </TableCell>
-                          <TableCell className="text-sm md:text-base text-muted-foreground">{n.createdAt}</TableCell>
-                        </TableRow>
-                      ))}
+                      {filteredNotifications.map((n) => {
+                        const { date, time } = formatUSA(n.createdAt);
+                        return (
+                          <TableRow key={n.id} className="hover:bg-muted/30">
+                            <TableCell>
+                              <div className="space-y-1">
+                                <p className="font-medium text-sm md:text-base">{n.title}</p>
+                                <p className="text-xs md:text-sm text-muted-foreground line-clamp-2 max-w-2xl">
+                                  {n.content || n.message}
+                                </p>
+                                <p className="text-xs text-muted-foreground md:hidden">{n.id}</p>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="secondary" className="text-xs md:text-sm">
+                                {n.audience}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="text-sm md:text-base text-muted-foreground whitespace-nowrap">{date}</TableCell>
+                            <TableCell className="text-sm md:text-base text-muted-foreground whitespace-nowrap">{time}</TableCell>
+                          </TableRow>
+                        );
+                      })}
                     </TableBody>
                   </Table>
                 </div>
