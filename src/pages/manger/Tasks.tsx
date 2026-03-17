@@ -81,6 +81,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/manger/utils";
 import { apiFetch } from "@/lib/manger/api";
+import { getAuthState } from "@/lib/auth";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import jsPDF from "jspdf";
 
@@ -114,8 +115,23 @@ interface Employee {
   status: "active" | "inactive" | "on-leave";
 }
 
+type TaskComment = {
+  id: string;
+  taskId: string;
+  message: string;
+  authorUsername: string;
+  authorRole?: string;
+  createdAt: string;
+};
+
 type TaskApi = Omit<Task, "id"> & {
   _id: string;
+};
+
+type TaskApiAttachmentFields = {
+  attachmentFileName?: string;
+  attachmentNote?: string;
+  attachment?: Task["attachment"];
 };
 
 function normalizeTask(t: TaskApi): Task {
@@ -125,6 +141,7 @@ function normalizeTask(t: TaskApi): Task {
     : legacyAssignee
       ? [legacyAssignee]
       : [];
+  const extra = t as TaskApi & TaskApiAttachmentFields;
   return {
     id: t._id,
     title: t.title,
@@ -136,9 +153,9 @@ function normalizeTask(t: TaskApi): Task {
     dueTime: t.dueTime,
     location: t.location,
     createdAt: t.createdAt,
-    attachmentFileName: (t as any).attachmentFileName,
-    attachmentNote: (t as any).attachmentNote,
-    attachment: (t as any).attachment,
+    attachmentFileName: extra.attachmentFileName,
+    attachmentNote: extra.attachmentNote,
+    attachment: extra.attachment,
   };
 }
 
@@ -189,7 +206,14 @@ export default function Tasks() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
+  const [comments, setComments] = useState<TaskComment[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentDraft, setCommentDraft] = useState("");
+  const [commentError, setCommentError] = useState<string | null>(null);
+  const [statusSaving, setStatusSaving] = useState(false);
   const queryClient = useQueryClient();
+
+  const currentUsername = getAuthState().username || "";
 
   // Fetch tasks
   const tasksQuery = useQuery({
@@ -391,6 +415,58 @@ export default function Tasks() {
   const openView = (task: Task) => {
     setSelectedTask(task);
     setIsViewOpen(true);
+    void loadComments(task.id);
+  };
+
+  const loadComments = async (taskId: string) => {
+    try {
+      setCommentsLoading(true);
+      setCommentError(null);
+      const res = await apiFetch<{ items: TaskComment[] }>(`/api/tasks/${encodeURIComponent(taskId)}/comments`);
+      setComments(Array.isArray(res.items) ? res.items : []);
+    } catch (e) {
+      setCommentError(e instanceof Error ? e.message : "Failed to load messages");
+      setComments([]);
+    } finally {
+      setCommentsLoading(false);
+    }
+  };
+
+  const sendComment = async () => {
+    if (!selectedTask) return;
+    const msg = commentDraft.trim();
+    if (!msg) return;
+
+    try {
+      setCommentError(null);
+      const res = await apiFetch<{ item: TaskComment }>(`/api/tasks/${encodeURIComponent(selectedTask.id)}/comments`, {
+        method: "POST",
+        body: JSON.stringify({ message: msg }),
+      });
+      setComments((prev) => [...prev, res.item]);
+      setCommentDraft("");
+    } catch (e) {
+      setCommentError(e instanceof Error ? e.message : "Failed to send message");
+    }
+  };
+
+  const updateStatus = async (next: Task["status"]) => {
+    if (!selectedTask) return;
+    try {
+      setStatusSaving(true);
+      setCommentError(null);
+      const res = await apiFetch<{ item: TaskApi }>(`/api/tasks/${encodeURIComponent(selectedTask.id)}/status`, {
+        method: "PATCH",
+        body: JSON.stringify({ status: next }),
+      });
+      const normalized = normalizeTask(res.item);
+      setSelectedTask(normalized);
+      await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+    } catch (e) {
+      setCommentError(e instanceof Error ? e.message : "Failed to update status");
+    } finally {
+      setStatusSaving(false);
+    }
   };
 
   const openEdit = (task: Task) => {
@@ -499,8 +575,8 @@ export default function Tasks() {
         const renderW = maxWidth;
         const renderH = (imgH / imgW) * renderW;
         ensureSpace(Math.min(renderH + 10, pageHeight - margin * 2));
-        const type = attMime.includes("png") || attUrl.startsWith("data:image/png") ? "PNG" : "JPEG";
-        doc.addImage(attUrl, type as any, margin, y, renderW, renderH);
+        const type: "PNG" | "JPEG" = attMime.includes("png") || attUrl.startsWith("data:image/png") ? "PNG" : "JPEG";
+        doc.addImage(attUrl, type, margin, y, renderW, renderH);
         y += renderH + 10;
       } else if (attName) {
         const attLines = doc.splitTextToSize(attName, maxWidth);
@@ -526,7 +602,7 @@ export default function Tasks() {
 
       const safeName = String(task.title || "task")
         .trim()
-        .replace(/[\\/:*?\"<>|]+/g, "-")
+        .replace(/[\\/:*?"<>|]+/g, "-")
         .slice(0, 80);
       doc.save(`${safeName || "task"}.pdf`);
     } catch (e) {
@@ -885,7 +961,12 @@ export default function Tasks() {
         open={isViewOpen}
         onOpenChange={(open) => {
           setIsViewOpen(open);
-          if (!open) setSelectedTask(null);
+          if (!open) {
+            setSelectedTask(null);
+            setComments([]);
+            setCommentDraft("");
+            setCommentError(null);
+          }
         }}
       >
         <DialogContent className="w-[95vw] sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
@@ -931,7 +1012,23 @@ export default function Tasks() {
                 </div>
                 <div className="space-y-1">
                   <p className="text-muted-foreground">Status</p>
-                  <p className="text-foreground capitalize">{selectedTask.status}</p>
+                  <Select
+                    value={selectedTask.status}
+                    onValueChange={(v) => {
+                      void updateStatus(v as Task["status"]);
+                    }}
+                    disabled={statusSaving}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select status" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="pending">Pending</SelectItem>
+                      <SelectItem value="in-progress">In Progress</SelectItem>
+                      <SelectItem value="completed">Completed</SelectItem>
+                      <SelectItem value="overdue">Overdue</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="space-y-1">
                   <p className="text-muted-foreground">Due Date</p>
@@ -995,6 +1092,144 @@ export default function Tasks() {
                       <span className="font-medium">Note:</span> {selectedTask.attachmentNote}
                     </p>
                   ) : null}
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-medium flex items-center gap-2">
+                    <span className="w-1 h-4 bg-primary rounded-full"></span>
+                    Messages
+                  </label>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      if (!selectedTask) return;
+                      void loadComments(selectedTask.id);
+                    }}
+                    disabled={commentsLoading}
+                    className="h-8 px-3 text-xs gap-1"
+                  >
+                    <span className={`${commentsLoading ? 'animate-spin' : ''}`}>⟳</span>
+                    Refresh
+                  </Button>
+                </div>
+
+                {commentError ? (
+                  <div className="text-xs text-destructive bg-destructive/10 p-3 rounded-lg flex items-center gap-2">
+                    <AlertTriangle className="h-4 w-4" />
+                    {commentError}
+                  </div>
+                ) : null}
+
+                {/* Messages Container - WhatsApp Style */}
+                <div className="rounded-xl bg-[#e5ded7] dark:bg-[#0b141a] p-4 space-y-3 min-h-[300px]">
+                  {commentsLoading ? (
+                    <div className="flex justify-center items-center h-32">
+                      <div className="animate-spin rounded-full h-6 w-6 border-2 border-primary border-t-transparent"></div>
+                    </div>
+                  ) : comments.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-32 text-center">
+                      <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-2">
+                        <span className="text-lg">💬</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">No messages yet</p>
+                      <p className="text-xs text-muted-foreground/70 mt-1">Start the conversation</p>
+                    </div>
+                  ) : (
+                    comments.map((c, index) => {
+                      const isMine = !!currentUsername && c.authorUsername === currentUsername;
+                      return (
+                        <motion.div
+                          key={c.id}
+                          initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          transition={{ delay: index * 0.05 }}
+                          className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}
+                        >
+                          <div
+                            className={`
+                              max-w-[85%] relative group
+                              ${isMine 
+                                ? 'bg-[#bfdbfe] dark:bg-[#2563eb] text-foreground dark:text-white' 
+                                : 'bg-white dark:bg-[#202c33] text-foreground dark:text-white'
+                              }
+                              rounded-lg px-3 py-2 shadow-sm
+                            `}
+                            style={{
+                              borderRadius: isMine 
+                                ? '18px 18px 4px 18px' 
+                                : '18px 18px 18px 4px'
+                            }}
+                          >
+                            {/* Author Name - Only show for others */}
+                            {!isMine && (
+                              <p className="text-xs font-semibold text-primary dark:text-primary/90 mb-1">
+                                {c.authorUsername}
+                                {c.authorRole && (
+                                  <span className="text-[10px] text-muted-foreground ml-1">
+                                    • {c.authorRole}
+                                  </span>
+                                )}
+                              </p>
+                            )}
+                            
+                            {/* Message Content */}
+                            <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+                              {c.message}
+                            </p>
+                            
+                            {/* Message Footer with Time */}
+                            <div className="flex items-center justify-end gap-1 mt-1">
+                              <span className="text-[10px] opacity-70">
+                                {new Date(c.createdAt).toLocaleTimeString([], { 
+                                  hour: '2-digit', 
+                                  minute: '2-digit' 
+                                })}
+                              </span>
+                              {isMine && (
+                                <span className="text-[10px] opacity-70">✓✓</span>
+                              )}
+                            </div>
+                          </div>
+                        </motion.div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Message Input - WhatsApp Style */}
+                <div className="flex items-center gap-2 bg-background rounded-lg p-1 border">
+                  <Input
+                    value={commentDraft}
+                    onChange={(e) => setCommentDraft(e.target.value)}
+                    placeholder="Type a message..."
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        void sendComment();
+                      }
+                    }}
+                    className="flex-1 border-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-sm"
+                  />
+                  <Button 
+                    type="button" 
+                    onClick={() => void sendComment()} 
+                    disabled={!commentDraft.trim()}
+                    size="sm"
+                    className="rounded-full w-9 h-9 p-0 bg-primary hover:bg-primary/90"
+                  >
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      className="w-4 h-4"
+                    >
+                      <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" />
+                    </svg>
+                  </Button>
                 </div>
               </div>
 
@@ -1320,8 +1555,9 @@ export default function Tasks() {
               {filteredTasks.map((task, index) => (
                 <tr
                   key={task.id}
-                  className="animate-fade-in"
+                  className="animate-fade-in cursor-pointer hover:bg-muted/50 transition-colors"
                   style={{ animationDelay: `${index * 30}ms` }}
+                  onClick={() => openView(task)}
                 >
                   <td>
                     <div>
@@ -1398,7 +1634,10 @@ export default function Tasks() {
                       variant="outline"
                       size="sm"
                       className="gap-2 whitespace-nowrap"
-                      onClick={() => void handlePrintTask(task)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        void handlePrintTask(task);
+                      }}
                     >
                       <Printer className="w-4 h-4" />
                       Print
@@ -1410,6 +1649,7 @@ export default function Tasks() {
                         <button
                           className="p-1.5 rounded-lg hover:bg-muted transition-colors"
                           aria-label="Task actions"
+                          onClick={(e) => e.stopPropagation()}
                         >
                           <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
                         </button>

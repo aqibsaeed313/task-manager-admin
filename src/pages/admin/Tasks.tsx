@@ -1,481 +1,256 @@
 import { useEffect, useMemo, useState } from "react";
-
 import { motion, AnimatePresence, type Variants } from "framer-motion";
-
 import { AdminLayout } from "@/components/admin/layout/AdminLayout";
-
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/admin/ui/card";
-
 import { Button } from "@/components/admin/ui/button";
-
 import { Input } from "@/components/admin/ui/input";
-
 import { Badge } from "@/components/admin/ui/badge";
-
 import { Avatar, AvatarFallback } from "@/components/admin/ui/avatar";
-
 import {
-
   Select,
-
   SelectContent,
-
   SelectItem,
-
   SelectTrigger,
-
   SelectValue,
-
 } from "@/components/admin/ui/select";
-
 import {
-
   Table,
-
   TableBody,
-
   TableCell,
-
   TableHead,
-
   TableHeader,
-
   TableRow,
-
 } from "@/components/admin/ui/table";
-
 import {
-
   DropdownMenu,
-
   DropdownMenuContent,
-
   DropdownMenuItem,
-
   DropdownMenuTrigger,
-
 } from "@/components/admin/ui/dropdown-menu";
-
 import {
-
   Dialog,
-
   DialogContent,
-
   DialogHeader,
-
   DialogTitle,
-
   DialogDescription,
-
   DialogFooter,
-
   DialogTrigger,
-
 } from "@/components/admin/ui/dialog";
-
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/admin/ui/popover";
-
 import {
-
   Command,
-
   CommandEmpty,
-
   CommandGroup,
-
   CommandInput,
-
   CommandItem,
-
   CommandList,
-
 } from "@/components/admin/ui/command";
-
 import {
-
   Plus,
-
   Search,
-
   Filter,
-
   MoreHorizontal,
-
   Eye,
-
   Edit,
-
   Trash2,
-
   MapPin,
-
   Clock,
-
   User,
-
   Calendar,
-
   FileText,
-
   Printer,
-
   Check,
-
   ChevronsUpDown,
-
   AlertTriangle,
-
   CheckCircle2,
-
   AlertCircle,
-
   Sparkles,
-
   Users,
-
   X,
-
   Loader2,
-
 } from "lucide-react";
-
 import jsPDF from "jspdf";
-
 import { apiFetch, createResource, deleteResource, listResource, updateResource } from "@/lib/admin/apiClient";
-
-
-
+import { getAuthState } from "@/lib/auth";
+import { getAuthState as getAdminAuthState } from "@/lib/admin/auth";
 interface Task {
-
   id: string;
-
   title: string;
-
   description: string;
-
   assignees: string[];
-
   assignee?: string;
-
   assigneeInitials?: string;
-
   location?: string;
-
   priority: "low" | "medium" | "high";
-
   status: "pending" | "in-progress" | "completed" | "overdue";
-
   dueDate: string;
-
   dueTime: string;
-
   createdAt: string;
-
   attachmentFileName?: string;
-
   attachmentNote?: string;
-
   attachment?: {
-
     fileName: string;
-
     url: string;
-
     mimeType: string;
-
     size: number;
-
   };
-
 }
-
-
 
 interface Employee {
-
   id: string;
-
   name: string;
-
   initials: string;
-
   email: string;
-
   status: "active" | "inactive" | "on-leave";
-
 }
-
-
 
 interface User {
-
   id: string;
-
   name: string;
-
   email: string;
-
   role: "admin" | "manager" | "employee";
-
   status: "active" | "inactive" | "pending";
-
 }
-
-
+type TaskComment = {
+  id: string;
+  taskId: string;
+  message: string;
+  authorUsername: string;
+  authorRole?: string;
+  createdAt: string;
+};
 
 // Enhanced priority classes with beautiful gradients
-
 const priorityClasses = {
-
   high: "bg-gradient-to-r from-destructive/20 to-destructive/10 text-destructive border-destructive/20 shadow-sm",
-
   medium: "bg-gradient-to-r from-[#eab308]/20 to-[#f59e0b]/20 text-[#eab308] dark:text-[#fbbf24] border-[#eab308]/20 shadow-sm",
-
   low: "bg-gradient-to-r from-[#22c55e]/20 to-[#10b981]/20 text-[#22c55e] dark:text-[#34d399] border-[#22c55e]/20 shadow-sm",
-
 };
-
-
 
 const toDateOnly = (value: string) => {
-
   const v = String(value || "").trim();
-
   if (!v) return "";
-
   const idx = v.indexOf("T");
-
   return idx >= 0 ? v.slice(0, idx) : v;
-
 };
-
-
 
 const getInitials = (name: string) => {
-
   return String(name || "")
-
     .split(" ")
-
     .filter(Boolean)
-
     .map((n) => n[0])
-
     .slice(0, 2)
-
     .join("")
-
     .toUpperCase();
-
 };
-
-
 
 const assigneesLabel = (assignees: string[]) => {
-
   return (assignees || []).filter(Boolean).join(", ");
-
 };
-
-
 
 // Calculate task statistics for an employee
-
 const getEmployeeTaskStats = (employeeName: string, allTasks: Task[]) => {
-
   const employeeTasks = allTasks.filter((task) => 
-
     task.assignees?.includes(employeeName) || task.assignee === employeeName
-
   );
-
   
-
   const total = employeeTasks.length;
-
   const completed = employeeTasks.filter((t) => t.status === "completed").length;
-
   const pending = employeeTasks.filter((t) => t.status === "pending" || t.status === "in-progress").length;
-
   const overdue = employeeTasks.filter((t) => t.status === "overdue").length;
-
   
-
   return { total, completed, pending, overdue };
-
 };
-
-
 
 const normalizeTaskAssignees = (task: Task): Task => {
-
   const legacyAssignee = typeof task.assignee === "string" ? task.assignee.trim() : "";
-
   const assignees = Array.isArray(task.assignees)
-
     ? task.assignees.filter(Boolean)
-
     : legacyAssignee
-
       ? [legacyAssignee]
-
       : [];
-
   return { ...task, assignees };
-
 };
-
-
 
 // Enhanced status classes with beautiful gradients
-
 const statusClasses = {
-
   pending: "bg-gradient-to-r from-muted to-muted/50 text-muted-foreground border-muted-foreground/20 shadow-sm",
-
   "in-progress": "bg-gradient-to-r from-[#3b82f6]/20 to-[#6366f1]/20 text-[#3b82f6] dark:text-[#818cf8] border-[#3b82f6]/20 shadow-sm",
-
   completed: "bg-gradient-to-r from-[#22c55e]/20 to-[#10b981]/20 text-[#22c55e] dark:text-[#34d399] border-[#22c55e]/20 shadow-sm",
-
   overdue: "bg-gradient-to-r from-destructive/20 to-destructive/10 text-destructive border-destructive/20 shadow-sm",
-
 };
-
-
 
 // Animation variants
-
 const containerVariants: Variants = {
-
   hidden: { opacity: 0 },
-
   visible: {
-
     opacity: 1,
-
     transition: {
-
       staggerChildren: 0.1,
-
       delayChildren: 0.2,
-
     },
-
   },
-
 };
-
-
 
 const itemVariants: Variants = {
-
   hidden: { y: 20, opacity: 0 },
-
   visible: {
-
     y: 0,
-
     opacity: 1,
-
     transition: {
-
       type: "spring" as const,
-
       stiffness: 100,
-
       damping: 12,
-
     },
-
   },
-
 };
-
-
 
 const cardVariants: Variants = {
-
   hidden: { scale: 0.95, opacity: 0 },
-
   visible: {
-
     scale: 1,
-
     opacity: 1,
-
     transition: {
-
       type: "spring" as const,
-
       stiffness: 100,
-
       damping: 15,
-
     },
-
   },
-
   hover: {
-
     scale: 1.02,
-
     boxShadow: "0 20px 25px -5px rgba(59, 130, 246, 0.1), 0 10px 10px -5px rgba(59, 130, 246, 0.04)",
-
     transition: {
-
       type: "spring" as const,
-
       stiffness: 400,
-
       damping: 17,
-
     },
-
   },
-
 };
 
-
-
 const Tasks = () => {
-
   const [searchQuery, setSearchQuery] = useState("");
-
   const [statusFilter, setStatusFilter] = useState("all");
-
   const [priorityFilter, setPriorityFilter] = useState("all");
-
   const [tasksList, setTasksList] = useState<Task[]>(() => []);
-
   const [employees, setEmployees] = useState<Employee[]>([]);
-
   const [loading, setLoading] = useState(true);
-
   const [apiError, setApiError] = useState<string | null>(null);
-
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
-
   const [assigneesOpen, setAssigneesOpen] = useState(false);
-
   const [editAssigneesOpen, setEditAssigneesOpen] = useState(false);
-
   const [reassignAssigneesOpen, setReassignAssigneesOpen] = useState(false);
-
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-
   const [viewDetailsOpen, setViewDetailsOpen] = useState(false);
-
   const [editTaskOpen, setEditTaskOpen] = useState(false);
-
   const [reassignOpen, setReassignOpen] = useState(false);
-
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-
-
-
+  const [comments, setComments] = useState<TaskComment[]>([]);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+  const [commentDraft, setCommentDraft] = useState("");
+  const [commentError, setCommentError] = useState<string | null>(null);
+  const [statusSaving, setStatusSaving] = useState(false);
+  const currentUsername = getAuthState().username || "";
   const [hoveredTask, setHoveredTask] = useState<string | null>(null);
-
   const [editFormData, setEditFormData] = useState({
 
     title: "",
@@ -686,6 +461,122 @@ const Tasks = () => {
 
 
 
+  const loadComments = async (taskId: string) => {
+
+    try {
+
+      setCommentsLoading(true);
+
+      setCommentError(null);
+
+      const res = await apiFetch<{ items: TaskComment[] }>(
+
+        `/api/tasks/${encodeURIComponent(taskId)}/comments`
+
+      );
+
+      setComments(Array.isArray(res.items) ? res.items : []);
+
+    } catch (e) {
+
+      setCommentError(e instanceof Error ? e.message : "Failed to load messages");
+
+      setComments([]);
+
+    } finally {
+
+      setCommentsLoading(false);
+
+    }
+
+  };
+
+
+
+  const sendComment = async () => {
+
+    if (!selectedTask) return;
+
+    const msg = commentDraft.trim();
+
+    if (!msg) return;
+
+
+
+    try {
+
+      setCommentError(null);
+
+      const res = await apiFetch<{ item: TaskComment }>(
+
+        `/api/tasks/${encodeURIComponent(selectedTask.id)}/comments`,
+
+        {
+
+          method: "POST",
+
+          body: JSON.stringify({ message: msg }),
+
+        }
+
+      );
+
+      setComments((prev) => [...prev, res.item]);
+
+      setCommentDraft("");
+
+    } catch (e) {
+
+      setCommentError(e instanceof Error ? e.message : "Failed to send message");
+
+    }
+
+  };
+
+
+
+  const updateStatus = async (next: Task["status"]) => {
+
+    if (!selectedTask) return;
+
+    try {
+
+      setStatusSaving(true);
+
+      setCommentError(null);
+
+      const res = await apiFetch<{ item: Task }>(
+
+        `/api/tasks/${encodeURIComponent(selectedTask.id)}/status`,
+
+        {
+
+          method: "PATCH",
+
+          body: JSON.stringify({ status: next }),
+
+        }
+
+      );
+
+      setSelectedTask(normalizeTaskAssignees(res.item));
+
+      await refreshTasks();
+
+    } catch (e) {
+
+      setCommentError(e instanceof Error ? e.message : "Failed to update status");
+
+    } finally {
+
+      setStatusSaving(false);
+
+    }
+
+  };
+
+
+
   const displayIdByTaskId = useMemo(() => {
 
     return new Map(
@@ -833,33 +724,19 @@ const Tasks = () => {
       }
 
       await refreshTasks();
-
       setCreateTaskOpen(false);
-
       setIsCreating(false);
-
       setValidationErrors({});
-
-      setFormData({
-
+     setFormData({
         title: "",
-
         description: "",
-
         assignees: [],
-
         priority: "medium",
-
         status: "pending",
-
         dueDate: "",
-
         dueTime: "",
-
         attachmentFileName: "",
-
         attachmentNote: "",
-
       });
 
       setAttachmentFile(null);
@@ -873,9 +750,6 @@ const Tasks = () => {
     }
 
   };
-
-
-
   const handleViewDetails = (task: Task) => {
 
     setEditTaskOpen(false);
@@ -886,9 +760,9 @@ const Tasks = () => {
 
     setViewDetailsOpen(true);
 
+    void loadComments(task.id);
+
   };
-
-
 
   const handleEditTask = (task: Task) => {
 
@@ -2364,7 +2238,9 @@ const Tasks = () => {
 
                           onHoverEnd={() => setHoveredTask(null)}
 
-                          className="bg-gradient-to-br from-card to-card/50 rounded-xl border p-4 space-y-3 shadow-lg hover:shadow-xl transition-all duration-300"
+                          onClick={() => handleViewDetails(task)}
+
+                          className="bg-gradient-to-br from-card to-card/50 rounded-xl border p-4 space-y-3 shadow-lg hover:shadow-xl transition-all duration-300 cursor-pointer"
 
                         >
 
@@ -3128,7 +3004,23 @@ const Tasks = () => {
 
       {/* View Details Dialog - Animated */}
 
-      <Dialog open={viewDetailsOpen} onOpenChange={setViewDetailsOpen}>
+      <Dialog open={viewDetailsOpen} onOpenChange={(open) => {
+
+        setViewDetailsOpen(open);
+
+        if (!open) {
+
+          setSelectedTask(null);
+
+          setComments([]);
+
+          setCommentDraft("");
+
+          setCommentError(null);
+
+        }
+
+      }}>
 
         <DialogContent className="w-[95vw] max-w-2xl mx-auto p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
 
@@ -3196,96 +3088,6 @@ const Tasks = () => {
 
                 >
 
-                  <label className="text-xs sm:text-sm font-medium">Assignees</label>
-
-                  <div className="flex items-center gap-2">
-
-                    <motion.div
-
-                      whileHover={{ scale: 1.1, rotate: 5 }}
-
-                      transition={{ type: "spring", stiffness: 300, damping: 10 }}
-
-                    >
-
-                      <Avatar className="h-5 w-5 sm:h-6 sm:w-6 ring-2 ring-primary/20">
-
-                        <AvatarFallback className="bg-gradient-to-br from-primary to-primary/60 text-white text-[10px] sm:text-xs">
-
-                          {getInitials(selectedTask.assignees?.[0] || "")}
-
-                        </AvatarFallback>
-
-                      </Avatar>
-
-                    </motion.div>
-
-                    <span className="text-xs sm:text-sm">{assigneesLabel(selectedTask.assignees) || "—"}</span>
-
-                  </div>
-
-                </motion.div>
-
-                
-
-                <motion.div 
-
-                  className="space-y-1.5"
-
-                  whileHover={{ x: 5 }}
-
-                >
-
-                  <label className="text-xs sm:text-sm font-medium">Priority</label>
-
-                  <div>
-
-                    <Badge className={`${priorityClasses[selectedTask.priority]} text-xs sm:text-sm`} variant="secondary">
-
-                      {selectedTask.priority}
-
-                    </Badge>
-
-                  </div>
-
-                </motion.div>
-
-                
-
-                <motion.div 
-
-                  className="space-y-1.5"
-
-                  whileHover={{ x: 5 }}
-
-                >
-
-                  <label className="text-xs sm:text-sm font-medium">Status</label>
-
-                  <div>
-
-                    <Badge className={`${statusClasses[selectedTask.status]} text-xs sm:text-sm flex items-center gap-1`} variant="secondary">
-
-                      {getStatusIcon(selectedTask.status)}
-
-                      {selectedTask.status}
-
-                    </Badge>
-
-                  </div>
-
-                </motion.div>
-
-                
-
-                <motion.div 
-
-                  className="space-y-1.5"
-
-                  whileHover={{ x: 5 }}
-
-                >
-
                   <label className="text-xs sm:text-sm font-medium">Due Date & Time</label>
 
                   <div className="flex items-center gap-1 text-xs sm:text-sm">
@@ -3306,7 +3108,7 @@ const Tasks = () => {
 
                 </motion.div>
 
-                
+
 
                 <motion.div 
 
@@ -3423,6 +3225,243 @@ const Tasks = () => {
                       </p>
 
                     )}
+
+                  </div>
+
+                </motion.div>
+
+                <motion.div
+
+                  className="sm:col-span-2 space-y-3"
+
+                  whileHover={{ x: 5 }}
+
+                >
+
+                  <div className="flex items-center justify-between mb-2">
+
+                    <label className="text-xs sm:text-sm font-medium flex items-center gap-2">
+
+                      <span className="w-1 h-4 bg-primary rounded-full"></span>
+
+                      Messages
+
+                    </label>
+
+                    <Button
+
+                      type="button"
+
+                      variant="ghost"
+
+                      size="sm"
+
+                      onClick={() => {
+
+                        if (!selectedTask) return;
+
+                        void loadComments(selectedTask.id);
+
+                      }}
+
+                      disabled={commentsLoading}
+
+                      className="h-8 px-3 text-xs gap-1"
+
+                    >
+
+                      <span className={`${commentsLoading ? 'animate-spin' : ''}`}>⟳</span>
+
+                      Refresh
+
+                    </Button>
+
+                  </div>
+
+
+
+                  {commentError ? (
+
+                    <div className="text-xs text-destructive bg-destructive/10 p-3 rounded-lg flex items-center gap-2">
+
+                      <AlertTriangle className="h-4 w-4" />
+
+                      {commentError}
+
+                    </div>
+
+                  ) : null}
+
+
+
+                  {/* Messages Container - WhatsApp Style */}
+
+                  <div className="rounded-xl bg-[#e5ded7] dark:bg-[#0b141a] p-4 space-y-3 min-h-[300px]">
+
+                    {commentsLoading ? (
+
+                      <div className="flex justify-center items-center h-32">
+
+                        <div className="animate-spin rounded-full h-6 w-6 border-2 border-primary border-t-transparent"></div>
+
+                      </div>
+
+                    ) : comments.length === 0 ? (
+
+                      <div className="flex flex-col items-center justify-center h-32 text-center">
+
+                        <div className="w-12 h-12 rounded-full bg-muted flex items-center justify-center mb-2">
+
+                          <span className="text-lg">💬</span>
+
+                        </div>
+
+                        <p className="text-xs text-muted-foreground">No messages yet</p>
+
+                        <p className="text-xs text-muted-foreground/70 mt-1">Start the conversation</p>
+
+                      </div>
+
+                    ) : (
+
+                      comments.map((c, index) => {
+
+                        const isMine = !!currentUsername && c.authorUsername === currentUsername;
+
+                        return (
+
+                          <motion.div
+
+                            key={c.id}
+
+                            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+
+                            transition={{ delay: index * 0.05 }}
+
+                            className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}
+
+                          >
+
+                            <div
+
+                              className={`
+
+                                max-w-[85%] relative group
+
+                                ${isMine 
+                                  ? 'bg-[#bfdbfe] dark:bg-[#2563eb] text-foreground dark:text-white' 
+                                  : 'bg-white dark:bg-[#202c33] text-foreground dark:text-white'
+                                }
+
+                                rounded-lg px-3 py-2 shadow-sm
+
+                              `}
+
+                              style={{
+
+                                borderRadius: isMine 
+                                  ? '18px 18px 4px 18px' 
+                                  : '18px 18px 18px 4px'
+
+                              }}
+
+                            >
+
+                              {/* Author Name - Only show for others */}
+
+                              {!isMine && (
+
+                                <p className="text-xs font-semibold text-primary dark:text-primary/90 mb-1">
+
+                                  {c.authorUsername}
+
+                                  {c.authorRole && (
+
+                                    <span className="text-[10px] text-muted-foreground ml-1">
+
+                                      • {c.authorRole}
+
+                                    </span>
+
+                                  )}
+
+                                </p>
+
+                              )}
+
+                              
+
+                              {/* Message Content */}
+
+                              <p className="text-sm whitespace-pre-wrap break-words leading-relaxed">
+
+                                {c.message}
+
+                              </p>
+
+                              
+
+                              {/* Message Footer with Time */}
+
+                              <div className="flex items-center justify-end gap-1 mt-1">
+
+                                <span className="text-[10px] opacity-70">
+
+                                  {new Date(c.createdAt).toLocaleTimeString([], { 
+                                    hour: '2-digit', 
+                                    minute: '2-digit' 
+                                  })}
+
+                                </span>
+
+                                {isMine && (
+
+                                  <span className="text-[10px] opacity-70">✓✓</span>
+
+                                )}
+
+                              </div>
+
+                            </div>
+                          </motion.div>
+                        );
+                      })
+                    )}
+                  </div>
+                  {/* Message Input - WhatsApp Style */}
+                  <div className="flex items-center gap-2 bg-background rounded-lg p-1 border">
+                    <Input
+                      value={commentDraft}
+                      onChange={(e) => setCommentDraft(e.target.value)}
+                      placeholder="Type a message..."
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey) {
+                          e.preventDefault();
+                          void sendComment();
+                        }
+                      }}
+                      className="flex-1 border-0 focus-visible:ring-0 focus-visible:ring-offset-0 text-sm"
+                    />
+
+                    <Button 
+                      type="button" 
+                      onClick={() => void sendComment()} 
+                      disabled={!commentDraft.trim()}
+                      size="sm"
+                      className="rounded-full w-9 h-9 p-0 bg-primary hover:bg-primary/90"
+                    >
+                      <svg
+                        xmlns="http://www.w3.org/2000/svg"
+                        viewBox="0 0 24 24"
+                        fill="currentColor"
+                        className="w-4 h-4"
+                      >
+                        <path d="M3.478 2.404a.75.75 0 0 0-.926.941l2.432 7.905H13.5a.75.75 0 0 1 0 1.5H4.984l-2.432 7.905a.75.75 0 0 0 .926.94 60.519 60.519 0 0 0 18.445-8.986.75.75 0 0 0 0-1.218A60.517 60.517 0 0 0 3.478 2.404Z" />
+                      </svg>
+
+                    </Button>
 
                   </div>
 
