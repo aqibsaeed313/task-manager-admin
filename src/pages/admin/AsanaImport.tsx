@@ -18,12 +18,13 @@ type ImportJob = {
 
 export default function AsanaImport() {
   const [token, setToken] = useState("");
-  const [workspaceId, setWorkspaceId] = useState("");
+  const [clientSecret, setClientSecret] = useState("");
 
   const [jobId, setJobId] = useState<string | null>(null);
   const [job, setJob] = useState<ImportJob | null>(null);
 
   const [loading, setLoading] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -69,8 +70,8 @@ export default function AsanaImport() {
     setSuccess(null);
     setJob(null);
 
-    if (!token.trim() || !workspaceId.trim()) {
-      setError("Asana token and Workspace ID are required");
+    if (!token.trim() || !clientSecret.trim()) {
+      setError("Asana token and Client Secret ID are required");
       return;
     }
 
@@ -78,13 +79,42 @@ export default function AsanaImport() {
       setLoading(true);
       const res = await apiFetch<{ ok: true; jobId: string }>("/api/asana-import/start", {
         method: "POST",
-        body: JSON.stringify({ token: token.trim(), workspaceId: workspaceId.trim() }),
+        body: JSON.stringify({ token: token.trim(), clientSecret: clientSecret.trim() }),
       });
       setJobId(res.jobId);
       startPolling(res.jobId);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to start import");
       setLoading(false);
+    }
+  };
+
+  const onTestConnection = async () => {
+    setError(null);
+    setSuccess(null);
+
+    if (!token.trim()) {
+      setError("Asana token is required");
+      return;
+    }
+
+    try {
+      setTesting(true);
+      const res = await apiFetch<{ ok: true; user: any; workspace: any }>("/api/asana-import/test", {
+        method: "POST",
+        body: JSON.stringify({ token: token.trim(), clientSecret: clientSecret.trim() || undefined }),
+      });
+
+      const userName = res.user?.name ? String(res.user.name) : "";
+      const wsName = res.workspace?.name ? String(res.workspace.name) : "";
+      const msg = wsName
+        ? `Connection OK. User: ${userName || "—"}. Workspace: ${wsName}`
+        : `Connection OK. User: ${userName || "—"}.`;
+      setSuccess(msg);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Test connection failed");
+    } finally {
+      setTesting(false);
     }
   };
 
@@ -116,13 +146,13 @@ export default function AsanaImport() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="block text-xs sm:text-sm font-medium">Workspace ID</label>
+              <label className="block text-xs sm:text-sm font-medium">Client Secret ID</label>
               <Input
-                value={workspaceId}
-                onChange={(e) => setWorkspaceId(e.target.value)}
-                placeholder="workspace gid"
+                value={clientSecret}
+                onChange={(e) => setClientSecret(e.target.value)}
+                placeholder="client secret / workspace gid"
                 className="h-9 sm:h-10 text-sm sm:text-base"
-                disabled={loading}
+                disabled={loading || testing}
               />
             </div>
 
@@ -143,7 +173,7 @@ export default function AsanaImport() {
             <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 pt-1">
               <Button
                 onClick={onStart}
-                disabled={loading}
+                disabled={loading || testing}
                 className="bg-accent hover:bg-accent/90 text-accent-foreground w-full sm:w-auto"
               >
                 {loading ? (
@@ -157,16 +187,31 @@ export default function AsanaImport() {
               </Button>
               <Button
                 variant="outline"
+                onClick={onTestConnection}
+                disabled={loading || testing}
+                className="w-full sm:w-auto"
+              >
+                {testing ? (
+                  <>
+                    <Loader2 className="h-4 w-4 mr-2 flex-shrink-0 animate-spin" />
+                    Testing...
+                  </>
+                ) : (
+                  "Test Connection"
+                )}
+              </Button>
+              <Button
+                variant="outline"
                 onClick={() => {
                   setToken("");
-                  setWorkspaceId("");
+                  setClientSecret("");
                   setJobId(null);
                   setJob(null);
                   setError(null);
                   setSuccess(null);
                   stopPolling();
                 }}
-                disabled={loading}
+                disabled={loading || testing}
                 className="w-full sm:w-auto"
               >
                 Reset
