@@ -10,7 +10,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/manger/ui/dialog";
-import { Avatar, AvatarFallback } from "@/components/manger/ui/avatar";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/manger/ui/avatar";
 import { Card, CardContent } from "@/components/manger/ui/card";
 import {
   Plus,
@@ -19,6 +19,8 @@ import {
   ArrowLeft,
   MessageCircle,
   User,
+  Archive,
+  Bookmark,
 } from "lucide-react";
 import { cn } from "@/lib/manger/utils";
 import { apiFetch } from "@/lib/manger/api";
@@ -33,6 +35,7 @@ interface Employee {
   role: string;
   department: string;
   status: string;
+  avatarUrl?: string;
 }
 
 interface Message {
@@ -90,12 +93,60 @@ export default function Messages() {
   const queryClient = useQueryClient();
   const [view, setView] = useState<"list" | "conversation" | "employees">("list");
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
+  const [listFilter, setListFilter] = useState<"all" | "archived" | "bookmarked">("all");
   const [searchQuery, setSearchQuery] = useState("");
   const [employeeSearchQuery, setEmployeeSearchQuery] = useState("");
   const [newMessageContent, setNewMessageContent] = useState("");
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
+
+  // Archive and Bookmark state (persisted to localStorage)
+  const [archivedConversations, setArchivedConversations] = useState<Set<string>>(() => {
+    const saved = localStorage.getItem("manager-messaging-archived");
+    return saved ? new Set(JSON.parse(saved)) : new Set();
+  });
+  const [bookmarkedConversations, setBookmarkedConversations] = useState<Set<string>>(() => {
+    const saved = localStorage.getItem("manager-messaging-bookmarked");
+    return saved ? new Set(JSON.parse(saved)) : new Set();
+  });
+
+  // Save to localStorage when changed
+  useEffect(() => {
+    localStorage.setItem("manager-messaging-archived", JSON.stringify([...archivedConversations]));
+  }, [archivedConversations]);
+
+  useEffect(() => {
+    localStorage.setItem("manager-messaging-bookmarked", JSON.stringify([...bookmarkedConversations]));
+  }, [bookmarkedConversations]);
+
+  // Archive/Unarchive helper
+  const toggleArchive = (e: React.MouseEvent, employeeId: string) => {
+    e.stopPropagation();
+    setArchivedConversations(prev => {
+      const next = new Set(prev);
+      if (next.has(employeeId)) {
+        next.delete(employeeId);
+      } else {
+        next.add(employeeId);
+      }
+      return next;
+    });
+  };
+
+  // Bookmark/Unbookmark helper
+  const toggleBookmark = (e: React.MouseEvent, employeeId: string) => {
+    e.stopPropagation();
+    setBookmarkedConversations(prev => {
+      const next = new Set(prev);
+      if (next.has(employeeId)) {
+        next.delete(employeeId);
+      } else {
+        next.add(employeeId);
+      }
+      return next;
+    });
+  };
 
   const currentUser = "Manager"; // Current logged in user
 
@@ -274,7 +325,7 @@ export default function Messages() {
   }
 
   // Empty state
-  if (!conversationsQuery.isLoading && conversations.length === 0 && view === "list") {
+  if (!conversationsQuery.isLoading && conversations.length === 0 && (view as string) === "list") {
     return (
       <div className="space-y-6">
         <div className="flex items-center justify-between">
@@ -303,7 +354,7 @@ export default function Messages() {
         </div>
 
         {/* Employee Selection Dialog */}
-        <Dialog open={view === "employees"} onOpenChange={() => setView("list")}>
+        <Dialog open={Boolean(view === "employees")} onOpenChange={() => setView("list")}>
           <DialogContent className="w-[95vw] max-w-2xl h-[80vh] flex flex-col">
             <DialogHeader>
               <DialogTitle>Select Employee</DialogTitle>
@@ -374,6 +425,14 @@ export default function Messages() {
               <Button variant="ghost" size="icon" onClick={() => { setView("list"); setSelectedEmployee(null); }}>
                 <ArrowLeft className="h-5 w-5" />
               </Button>
+              <Avatar className="h-10 w-10">
+                {selectedEmployee.avatarUrl ? (
+                  <AvatarImage src={selectedEmployee.avatarUrl} alt={selectedEmployee.name} className="object-cover" />
+                ) : null}
+                <AvatarFallback className="bg-primary text-primary-foreground text-sm">
+                  {getInitials(selectedEmployee.name)}
+                </AvatarFallback>
+              </Avatar>
               <div>
                 <h1 className="text-xl sm:text-2xl font-bold">{selectedEmployee.name}</h1>
                 <p className="text-sm text-muted-foreground">{selectedEmployee.email}</p>
@@ -400,6 +459,36 @@ export default function Messages() {
       {/* Conversation List View */}
       {view === "list" && (
         <>
+          {/* Filter Tabs */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-2">
+            <Button
+              variant={listFilter === "all" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setListFilter("all")}
+              className="whitespace-nowrap"
+            >
+              All
+            </Button>
+            <Button
+              variant={listFilter === "archived" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setListFilter("archived")}
+              className="whitespace-nowrap gap-1"
+            >
+              <Archive className="h-3.5 w-3.5" />
+              Archived ({archivedConversations.size})
+            </Button>
+            <Button
+              variant={listFilter === "bookmarked" ? "default" : "outline"}
+              size="sm"
+              onClick={() => setListFilter("bookmarked")}
+              className="whitespace-nowrap gap-1"
+            >
+              <Bookmark className="h-3.5 w-3.5" />
+              Bookmarked ({bookmarkedConversations.size})
+            </Button>
+          </div>
+
           {/* Search */}
           <Card>
             <CardContent className="p-3 sm:p-4">
@@ -419,56 +508,150 @@ export default function Messages() {
           <Card>
             <CardContent className="p-0">
               <div className="divide-y divide-border">
-                {filteredConversations.map((conv) => (
-                  <button
-                    key={conv.employee.id || conv.employee._id}
-                    onClick={() => startConversation(conv.employee)}
-                    className="w-full flex items-center gap-4 p-4 hover:bg-muted/50 transition-colors text-left"
-                  >
-                    <div className="relative">
-                      <Avatar className="h-12 w-12">
-                        <AvatarFallback className="bg-primary text-primary-foreground">
-                          {getInitials(conv.employee.name)}
-                        </AvatarFallback>
-                      </Avatar>
-                      {conv.unreadCount > 0 && (
-                        <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center">
-                          {conv.unreadCount}
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <p className="font-medium truncate">{conv.employee.name}</p>
-                        {conv.lastMessage && (
-                          <p className="text-xs text-muted-foreground">
-                            {formatMessageTime(conv.lastMessage.timestamp)}
-                          </p>
-                        )}
-                      </div>
-                      <p
-                        className={cn(
-                          "text-sm truncate",
-                          conv.unreadCount > 0 ? "font-medium text-foreground" : "text-muted-foreground"
-                        )}
-                      >
-                        {conv.lastMessage
-                          ? `${conv.lastMessage.sender === currentUser ? "You: " : ""}${conv.lastMessage.content}`
-                          : "Start a conversation..."}
-                      </p>
-                    </div>
-                  </button>
-                ))}
-
-                {filteredConversations.length === 0 && (
-                  <div className="p-8 text-center">
-                    <p className="text-muted-foreground">No conversations found</p>
-                    <Button variant="outline" className="mt-4 gap-2" onClick={() => setView("employees")}>
-                      <Plus className="h-4 w-4" />
-                      Start New Conversation
-                    </Button>
+                {/* Archived Section Header (when showing archived) */}
+                {listFilter === "archived" && archivedConversations.size > 0 && (
+                  <div className="px-4 py-2 bg-muted/50 text-xs font-medium text-muted-foreground flex items-center gap-2">
+                    <Archive className="h-3.5 w-3.5" />
+                    Archived Conversations
                   </div>
                 )}
+                
+                {/* Bookmarked Section Header (when showing bookmarked) */}
+                {listFilter === "bookmarked" && bookmarkedConversations.size > 0 && (
+                  <div className="px-4 py-2 bg-muted/50 text-xs font-medium text-muted-foreground flex items-center gap-2">
+                    <Bookmark className="h-3.5 w-3.5" />
+                    Bookmarked Conversations
+                  </div>
+                )}
+
+                {(() => {
+                  // Filter conversations based on current filter
+                  let displayConversations = filteredConversations;
+                  
+                  if (listFilter === "archived") {
+                    displayConversations = filteredConversations.filter(
+                      (conv) => archivedConversations.has(conv.employee.id || conv.employee._id || "")
+                    );
+                  } else if (listFilter === "bookmarked") {
+                    displayConversations = filteredConversations.filter(
+                      (conv) => bookmarkedConversations.has(conv.employee.id || conv.employee._id || "")
+                    );
+                  } else {
+                    // "all" filter - show non-archived first
+                    displayConversations = filteredConversations.filter(
+                      (conv) => !archivedConversations.has(conv.employee.id || conv.employee._id || "")
+                    );
+                  }
+
+                  if (displayConversations.length === 0) {
+                    return (
+                      <div className="p-8 text-center">
+                        <p className="text-muted-foreground">
+                          {listFilter === "archived" 
+                            ? "No archived conversations" 
+                            : listFilter === "bookmarked"
+                            ? "No bookmarked conversations"
+                            : "No conversations found"}
+                        </p>
+                        {listFilter !== "all" && (
+                          <Button 
+                            variant="outline" 
+                            className="mt-4"
+                            onClick={() => setListFilter("all")}
+                          >
+                            Show All Conversations
+                          </Button>
+                        )}
+                      </div>
+                    );
+                  }
+
+                  return displayConversations.map((conv) => {
+                    const empId = conv.employee.id || conv.employee._id || "";
+                    const isArchived = archivedConversations.has(empId);
+                    const isBookmarked = bookmarkedConversations.has(empId);
+                    
+                    return (
+                      <div
+                        key={empId}
+                        className="group flex items-center gap-3 p-4 hover:bg-muted/50 transition-colors"
+                      >
+                        {/* Main conversation button */}
+                        <button
+                          onClick={() => startConversation(conv.employee)}
+                          className="flex-1 flex items-center gap-3 text-left min-w-0"
+                        >
+                          <div className="relative flex-shrink-0">
+                            <Avatar className="h-12 w-12">
+                              {conv.employee.avatarUrl ? (
+                                <AvatarImage src={conv.employee.avatarUrl} alt={conv.employee.name} className="object-cover" />
+                              ) : null}
+                              <AvatarFallback className="bg-primary text-primary-foreground">
+                                {getInitials(conv.employee.name)}
+                              </AvatarFallback>
+                            </Avatar>
+                            {conv.unreadCount > 0 && !isArchived && (
+                              <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-500 text-white text-xs flex items-center justify-center">
+                                {conv.unreadCount}
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-2">
+                                <p className="font-medium truncate">{conv.employee.name}</p>
+                                {isBookmarked && (
+                                  <Bookmark className="h-3.5 w-3.5 text-amber-500 flex-shrink-0" fill="currentColor" />
+                                )}
+                              </div>
+                              {conv.lastMessage && (
+                                <p className="text-xs text-muted-foreground flex-shrink-0">
+                                  {formatMessageTime(conv.lastMessage.timestamp)}
+                                </p>
+                              )}
+                            </div>
+                            <p className={cn(
+                              "text-sm truncate",
+                              conv.unreadCount > 0 && !isArchived ? "font-medium text-foreground" : "text-muted-foreground"
+                            )}>
+                              {conv.lastMessage 
+                                ? `${conv.lastMessage.sender === currentUser ? "You: " : ""}${conv.lastMessage.content}`
+                                : "Start a conversation..."
+                              }
+                            </p>
+                          </div>
+                        </button>
+                        
+                        {/* Action buttons - visible on hover */}
+                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={(e) => toggleBookmark(e, empId)}
+                            title={isBookmarked ? "Remove bookmark" : "Bookmark conversation"}
+                          >
+                            <Bookmark 
+                              className={cn("h-4 w-4", isBookmarked ? "text-amber-500" : "text-muted-foreground")} 
+                              fill={isBookmarked ? "currentColor" : "none"}
+                            />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8"
+                            onClick={(e) => toggleArchive(e, empId)}
+                            title={isArchived ? "Unarchive" : "Archive conversation"}
+                          >
+                            <Archive 
+                              className={cn("h-4 w-4", isArchived ? "text-primary" : "text-muted-foreground")} 
+                            />
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  });
+                })()}
               </div>
             </CardContent>
           </Card>
@@ -476,7 +659,7 @@ export default function Messages() {
       )}
 
       {/* Employee Selection Dialog */}
-      <Dialog open={view === "employees"} onOpenChange={() => setView("list")}>
+      <Dialog open={Boolean(view === "employees")} onOpenChange={() => setView("list")}>
         <DialogContent className="w-[95vw] max-w-2xl h-[80vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Select Employee to Message</DialogTitle>
@@ -500,6 +683,9 @@ export default function Messages() {
                 className="w-full flex items-center gap-4 p-3 rounded-lg hover:bg-muted transition-colors text-left"
               >
                 <Avatar className="h-12 w-12">
+                  {employee.avatarUrl ? (
+                    <AvatarImage src={employee.avatarUrl} alt={employee.name} className="object-cover" />
+                  ) : null}
                   <AvatarFallback className="bg-primary text-primary-foreground">
                     {getInitials(employee.name)}
                   </AvatarFallback>
@@ -557,6 +743,9 @@ export default function Messages() {
                     <div key={msg.id} className={cn("flex gap-3", isMe ? "flex-row-reverse" : "flex-row")}>
                       {showAvatar ? (
                         <Avatar className="h-8 w-8 flex-shrink-0">
+                          {isMe ? null : selectedEmployee?.avatarUrl ? (
+                            <AvatarImage src={selectedEmployee.avatarUrl} alt={selectedEmployee.name} className="object-cover" />
+                          ) : null}
                           <AvatarFallback className={isMe ? "bg-primary text-primary-foreground" : "bg-muted"}>
                             {getInitials(isMe ? currentUser : msg.sender)}
                           </AvatarFallback>

@@ -58,6 +58,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         }))
         .filter((m: any) => Boolean(m.id));
     },
+    refetchInterval: 5000, // Refresh every 5 seconds for real-time notifications
   });
 
   // Direct messages for message dropdown
