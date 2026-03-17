@@ -7,9 +7,11 @@ type ApiErrorBody = {
 };
 
 export function getApiBaseUrl() {
+  const raw = String(import.meta.env.VITE_API_URL || "").trim();
+  if (raw) return raw;
   // Always use Vercel backend URL
-  return "https://task.se7eninc.com";
-//  return "http://localhost:5000";
+  // return "https://task.se7eninc.com";
+  return "http://localhost:5000";
 }
 
 async function parseJsonSafe(res: Response) {
@@ -23,8 +25,8 @@ async function parseJsonSafe(res: Response) {
 }
 
 export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> {
-  const baseUrl = "https://task.se7eninc.com";
-  //  const baseUrl = "http://localhost:5000";
+  // const baseUrl = "https://task.se7eninc.com";
+  const baseUrl = getApiBaseUrl();
   const url = `${String(baseUrl).replace(/\/$/, "")}${path}`;
 
   const auth = getAuthState();
