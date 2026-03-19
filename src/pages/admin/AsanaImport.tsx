@@ -183,67 +183,15 @@ export default function AsanaImport() {
 
     try {
       setLoading(true);
-
-      // Set a placeholder job so the UI shows progress immediately
-      setJob({
-        id: "pending",
-        status: "running",
-        stage: "queued",
-        startedAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-        error: null,
-        result: null,
-      });
-
-      // Start the elapsed-time timer immediately
-      stopPolling();
-      setElapsedTime(0);
-      timerRef.current = window.setInterval(() => {
-        setElapsedTime(prev => prev + 1);
-      }, 1000);
-
-      // The /start endpoint now runs the import synchronously AND returns the final job.
-      // We also start polling in the background so the UI can show live progress updates.
-      let pollingStarted = false;
-
-      // Start a background fetch that will begin polling once we know the jobId
-      // We send the request first, then start polling based on intermediate status updates
-      const startPromise = apiFetch<{ ok: true; jobId: string; job?: ImportJob }>("/api/asana-import/start", {
+      const res = await apiFetch<{ ok: true; jobId: string }>("/api/asana-import/start", {
         method: "POST",
         body: JSON.stringify({ token: token.trim(), clientSecret: clientSecret.trim() }),
       });
-
-      // While waiting for the long request, poll /status every 2s for live progress
-      // We need the jobId first, so we try a brief initial request approach:
-      // Actually, since the /start request blocks until done, we can still poll by jobId
-      // but we won't have the jobId until /start returns. So let's just wait for /start.
-      const res = await startPromise;
-
       setJobId(res.jobId);
-
-      // /start now returns the final job directly
-      if (res.job) {
-        setJob(res.job);
-        if (res.job.status === "completed") {
-          setSuccess("Import completed successfully!");
-          setLoading(false);
-          stopPolling();
-        } else if (res.job.status === "failed") {
-          setError(res.job.error || "Import failed");
-          setLoading(false);
-          stopPolling();
-        } else {
-          // Still running somehow (shouldn't happen with sync approach), start polling
-          startPolling(res.jobId);
-        }
-      } else {
-        // Fallback: if no job in response, poll for status
-        startPolling(res.jobId);
-      }
+      startPolling(res.jobId);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to start import");
       setLoading(false);
-      stopPolling();
     }
   };
 
