@@ -6,6 +6,7 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import Login from "./pages/admin/Login";
 import AdminRoutes from "./routes/AdminRoutes";
 import ManagerController from "./routes/ManagerController";
+import DeveloperController from "./routes/DeveloperController";
 import { getAuthState } from "./lib/auth";
 
 const queryClient = new QueryClient();
@@ -13,6 +14,7 @@ const queryClient = new QueryClient();
 function IndexRedirect() {
   const auth = getAuthState();
   if (!auth.isAuthenticated || !auth.role) return <Navigate to="/login" replace />;
+  if (auth.role === "developer") return <Navigate to="/developer" replace />;
   return <Navigate to={auth.role === "admin" || auth.role === "super-admin" ? "/admin" : "/manager"} replace />;
 }
 
@@ -27,6 +29,7 @@ const App = () => (
           <Route path="/login" element={<Login />} />
           <Route path="/admin/*" element={<AdminRoutes />} />
           <Route path="/manager/*" element={<ManagerController />} />
+          <Route path="/developer/*" element={<DeveloperController />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </BrowserRouter>

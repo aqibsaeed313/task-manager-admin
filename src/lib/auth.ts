@@ -1,4 +1,4 @@
-export type UserRole = "super-admin" | "admin" | "manager";
+export type UserRole = "super-admin" | "admin" | "manager" | "developer";
 
 export type Role = "super-admin" | "admin" | "manager" | "employee";
 
@@ -109,7 +109,7 @@ export function getAuthState(): AuthState {
     return {
       isAuthenticated: Boolean(parsed.isAuthenticated),
       role:
-        parsed.role === "super-admin" || parsed.role === "admin" || parsed.role === "manager"
+        parsed.role === "super-admin" || parsed.role === "admin" || parsed.role === "manager" || parsed.role === "developer"
           ? parsed.role
           : null,
       username: typeof parsed.username === "string" ? parsed.username : null,

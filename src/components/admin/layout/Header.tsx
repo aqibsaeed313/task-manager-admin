@@ -1,4 +1,4 @@
-import { Bell, Mail, Menu, User } from "lucide-react";
+import { Bell, Bug, Mail, Menu, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -10,10 +10,20 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
 import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/admin/apiClient";
 import { getAuthState, clearAuthState } from "@/lib/auth";
+import { useState } from "react";
 
 interface HeaderProps {
   onMenuClick?: () => void;
@@ -91,6 +101,10 @@ export function Header({ onMenuClick }: HeaderProps) {
       if (resourceId) return `/admin/tasks?view=${encodeURIComponent(resourceId)}`;
       return "/admin/tasks";
     }
+    if (resourceType === "bug") {
+      if (resourceId) return `/developer/bugs?view=${encodeURIComponent(resourceId)}`;
+      return "/developer/bugs";
+    }
 
     const content = String(n.content || "").toLowerCase();
     if (content.includes(" employee")) return "/admin/employees";
@@ -148,6 +162,74 @@ export function Header({ onMenuClick }: HeaderProps) {
   const unreadCount = (notificationsQuery.data || []).filter((n) => n.status !== "read").length;
   const unreadMessageCount = (messagesQuery.data || []).reduce((sum, c) => sum + (c.unreadCount || 0), 0);
 
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportTitle, setReportTitle] = useState("");
+  const [reportDescription, setReportDescription] = useState("");
+  const [reportImageFile, setReportImageFile] = useState<File | null>(null);
+  const [reportImagePreviewUrl, setReportImagePreviewUrl] = useState("");
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportError, setReportError] = useState<string | null>(null);
+
+  const resetReport = () => {
+    setReportTitle("");
+    setReportDescription("");
+    setReportImageFile(null);
+    if (reportImagePreviewUrl) URL.revokeObjectURL(reportImagePreviewUrl);
+    setReportImagePreviewUrl("");
+    setReportError(null);
+  };
+
+  const submitReport = async () => {
+    const title = reportTitle.trim();
+    const description = reportDescription.trim();
+    if (!title || !description) {
+      setReportError("Title and description are required");
+      return;
+    }
+
+    try {
+      setReportSubmitting(true);
+      setReportError(null);
+
+      const toDataUrl = (file: File) =>
+        new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(String(reader.result || ""));
+          reader.onerror = () => reject(new Error("Failed to read image"));
+          reader.readAsDataURL(file);
+        });
+
+      const attachment = reportImageFile
+        ? {
+            fileName: reportImageFile.name,
+            url: await toDataUrl(reportImageFile),
+            mimeType: reportImageFile.type,
+            size: reportImageFile.size,
+          }
+        : undefined;
+
+      await apiFetch("/api/bugs", {
+        method: "POST",
+        body: JSON.stringify({
+          title,
+          description,
+          attachment,
+          source: {
+            panel: "admin",
+            path: typeof window !== "undefined" ? window.location.pathname : "/admin",
+          },
+        }),
+      });
+
+      setReportOpen(false);
+      resetReport();
+    } catch (e) {
+      setReportError(e instanceof Error ? e.message : "Failed to submit report");
+    } finally {
+      setReportSubmitting(false);
+    }
+  };
+
   const markRead = async (id: string) => {
     try {
       await apiFetch(`/api/messages/${id}`, {
@@ -198,6 +280,20 @@ export function Header({ onMenuClick }: HeaderProps) {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3 text-white z-10">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              className="hidden sm:inline-flex relative h-9 w-9 rounded-full bg-white/10 hover:bg-white/20"
+              aria-label="Report Issue"
+              onClick={() => {
+                resetReport();
+                setReportOpen(true);
+              }}
+            >
+              <Bug className="h-4 w-4" />
+            </Button>
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button
@@ -335,6 +431,83 @@ export function Header({ onMenuClick }: HeaderProps) {
           </div>
         </div>
       </div>
+
+      <Dialog
+        open={reportOpen}
+        onOpenChange={(open) => {
+          setReportOpen(open);
+          if (!open) resetReport();
+        }}
+      >
+        <DialogContent className="w-[95vw] max-w-2xl mx-auto p-4 sm:p-6 max-h-[90vh] overflow-y-auto">
+          <DialogHeader className="space-y-1.5 sm:space-y-2">
+            <DialogTitle className="text-lg sm:text-xl">Report an Issue</DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm">
+              Add screenshot and describe the issue. Current page will be attached automatically.
+            </DialogDescription>
+          </DialogHeader>
+
+          {reportError && (
+            <div className="rounded-md bg-destructive/10 p-3">
+              <p className="text-xs sm:text-sm text-destructive break-words">{reportError}</p>
+            </div>
+          )}
+
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="block text-xs sm:text-sm font-medium">Title *</label>
+              <Input
+                value={reportTitle}
+                onChange={(e) => setReportTitle(e.target.value)}
+                placeholder="Button not working"
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs sm:text-sm font-medium">Description *</label>
+              <textarea
+                value={reportDescription}
+                onChange={(e) => setReportDescription(e.target.value)}
+                className="w-full rounded-md border px-3 py-2 text-sm sm:text-base min-h-24 resize-none"
+                placeholder="Explain what happened, expected vs actual..."
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-xs sm:text-sm font-medium">Screenshot (optional)</label>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0] || null;
+                  setReportImageFile(file);
+                  if (reportImagePreviewUrl) URL.revokeObjectURL(reportImagePreviewUrl);
+                  setReportImagePreviewUrl(file ? URL.createObjectURL(file) : "");
+                }}
+              />
+              {reportImagePreviewUrl ? (
+                <div className="w-full overflow-hidden rounded-lg border bg-white">
+                  <img src={reportImagePreviewUrl} alt="preview" className="w-full h-auto max-h-64 object-contain" />
+                </div>
+              ) : null}
+            </div>
+          </div>
+
+          <DialogFooter className="flex-col sm:flex-row gap-2 sm:gap-3 mt-4 sm:mt-6">
+            <Button
+              variant="outline"
+              onClick={() => setReportOpen(false)}
+              className="w-full sm:w-auto"
+              disabled={reportSubmitting}
+            >
+              Cancel
+            </Button>
+            <Button onClick={() => void submitReport()} className="w-full sm:w-auto" disabled={reportSubmitting}>
+              Submit
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </header>
   );
 }

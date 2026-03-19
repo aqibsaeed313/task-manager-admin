@@ -30,7 +30,13 @@ export default function Login() {
   useEffect(() => {
     const auth = getAuthState();
     if (auth.isAuthenticated && auth.role) {
-      navigate(auth.role === "admin" || auth.role === "super-admin" ? "/admin" : "/manager", { replace: true });
+      const to =
+        auth.role === "developer"
+          ? "/developer"
+          : auth.role === "admin" || auth.role === "super-admin"
+            ? "/admin"
+            : "/manager";
+      navigate(to, { replace: true });
     }
   }, [navigate]);
 
@@ -40,7 +46,8 @@ export default function Login() {
     try {
       setError(null);
       const result = await login(formData.username, formData.password);
-      const defaultLanding = result.role === "admin" || result.role === "super-admin" ? "/admin" : "/manager";
+      const defaultLanding =
+        result.role === "developer" ? "/developer" : result.role === "admin" || result.role === "super-admin" ? "/admin" : "/manager";
       const nextPath = redirectTo && redirectTo !== "/" && redirectTo !== "/login" ? redirectTo : defaultLanding;
       navigate(nextPath, { replace: true });
     } catch (e) {
