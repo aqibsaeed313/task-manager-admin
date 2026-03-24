@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence, type Variants } from "framer-motion";
 import { AdminLayout } from "@/components/admin/layout/AdminLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/admin/ui/card";
@@ -74,6 +74,7 @@ import jsPDF from "jspdf";
 import { apiFetch, createResource, deleteResource, listResource, updateResource } from "@/lib/admin/apiClient";
 import { getAuthState } from "@/lib/auth";
 import { getAuthState as getAdminAuthState } from "@/lib/admin/auth";
+import { useSocket } from "@/contexts/SocketContext";
 interface Task {
   id: string;
   title: string;
@@ -229,6 +230,7 @@ const cardVariants: Variants = {
 };
 
 const Tasks = () => {
+  const { socket, isConnected, joinTask, leaveTask, emitTyping, emitStopTyping } = useSocket();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
@@ -250,7 +252,9 @@ const Tasks = () => {
   const [commentDraft, setCommentDraft] = useState("");
   const [commentError, setCommentError] = useState<string | null>(null);
   const [statusSaving, setStatusSaving] = useState(false);
-  const currentUsername = getAuthState().username || "";
+  const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const currentUsername = getAuthState().username || getAdminAuthState().username || "";
   const [hoveredTask, setHoveredTask] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState({
 
@@ -502,13 +506,21 @@ const Tasks = () => {
 
     if (!msg) return;
 
+    // Emit stop typing before sending
 
+    emitStopTyping(selectedTask.id);
+
+    // Clear draft immediately for better UX
+
+    setCommentDraft("");
 
     try {
 
       setCommentError(null);
 
-      const res = await apiFetch<{ item: TaskComment }>(
+      // Send via API - WebSocket will broadcast and add to state
+
+      await apiFetch<{ item: TaskComment }>(
 
         `/api/tasks/${encodeURIComponent(selectedTask.id)}/comments`,
 
@@ -522,9 +534,9 @@ const Tasks = () => {
 
       );
 
-      setComments((prev) => [...prev, res.item]);
+      // Note: Message will be added via WebSocket broadcast, not here
 
-      setCommentDraft("");
+      // This prevents duplicates since WebSocket sends to all including sender
 
     } catch (e) {
 
@@ -578,23 +590,61 @@ const Tasks = () => {
 
 
 
+  // WebSocket effect for real-time comments
+  useEffect(() => {
+    if (!socket || !isConnected || !selectedTask) return;
+
+    // Join task room
+    joinTask(selectedTask.id);
+
+    // Listen for new comments
+    const handleNewComment = (comment: TaskComment) => {
+      setComments((prev) => {
+        // Avoid duplicates
+        if (prev.some((c) => c.id === comment.id)) return prev;
+        return [...prev, comment];
+      });
+    };
+
+    // Listen for typing indicators
+    const handleTyping = ({ taskId, username }: { taskId: string; username: string }) => {
+      if (taskId === selectedTask.id && username !== currentUsername) {
+        setTypingUsers((prev) => {
+          if (prev.includes(username)) return prev;
+          return [...prev, username];
+        });
+      }
+    };
+
+    // Listen for stop typing
+    const handleStopTyping = ({ taskId }: { taskId: string }) => {
+      if (taskId === selectedTask.id) {
+        // Will be cleared by timeout or next typing event
+      }
+    };
+
+    socket.on("new-comment", handleNewComment);
+    socket.on("typing", handleTyping);
+    socket.on("stop-typing", handleStopTyping);
+
+    // Cleanup
+    return () => {
+      socket.off("new-comment", handleNewComment);
+      socket.off("typing", handleTyping);
+      socket.off("stop-typing", handleStopTyping);
+      leaveTask(selectedTask.id);
+      setTypingUsers([]);
+    };
+  }, [socket, isConnected, selectedTask, joinTask, leaveTask, currentUsername]);
+
   const displayIdByTaskId = useMemo(() => {
-
     return new Map(
-
       tasksList.map((t, idx) => {
-
         const displayId = `TSK${String(idx + 1).padStart(3, "0")}`;
-
         return [t.id, displayId] as const;
-
       }),
-
     );
-
   }, [tasksList]);
-
-
 
   const getDisplayTaskId = (taskId: string) => {
 
