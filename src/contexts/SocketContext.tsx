@@ -36,7 +36,7 @@ export function SocketProvider({ children }: SocketProviderProps) {
     // Initialize socket connection
     const socket = io(socketUrl, {
       withCredentials: true,
-      transports: ["websocket", "polling"], // Fallback to polling if websocket fails
+      transports: ["polling"], // Forced polling to prevent Vercel websocket noise
     });
 
     socketRef.current = socket;

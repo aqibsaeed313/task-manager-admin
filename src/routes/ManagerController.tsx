@@ -11,7 +11,6 @@ import TimeTracking from "@/pages/manger/TimeTracking";
 import EmployeeTimeHistory from "@/pages/manger/EmployeeTimeHistory";
 import Vehicles from "@/pages/manger/Vehicles";
 import Appliances from "@/pages/manger/Appliances";
-console.log("Appliances import:", Appliances);
 import Locations from "@/pages/manger/Locations";
 import Vendors from "@/pages/manger/Vendors";
 import Messages from "@/pages/manger/Messages";
