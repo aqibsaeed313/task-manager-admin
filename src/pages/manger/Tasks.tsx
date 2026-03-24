@@ -108,6 +108,32 @@ interface Task {
   };
 }
 
+type CreateProjectTaskDraft = {
+  title: string;
+  description: string;
+  assignees: string[];
+  priority: Task["priority"];
+  status: Task["status"];
+  dueDate: string;
+  dueTime?: string;
+  location?: string;
+  createdAt: string;
+  attachmentFileName?: string;
+  attachmentNote?: string;
+  attachment?: {
+    fileName: string;
+    url: string;
+    mimeType: string;
+    size: number;
+  };
+};
+
+type CreateProjectPayload = {
+  name: string;
+  description: string;
+  tasks: Array<Omit<CreateProjectTaskDraft, "location">>;
+};
+
 interface Employee {
   id: string;
   name: string;
@@ -192,14 +218,17 @@ export default function Tasks() {
   const [statusFilter, setStatusFilter] = useState<string>("all");
   const [priorityFilter, setPriorityFilter] = useState<string>("all");
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const [isViewOpen, setIsViewOpen] = useState(false);
+  const [projectName, setProjectName] = useState("");
+  const [projectDescription, setProjectDescription] = useState("");
+  const [projectTasks, setProjectTasks] = useState<CreateProjectTaskDraft[]>([]);
   const [isEditOpen, setIsEditOpen] = useState(false);
+  const [isViewOpen, setIsViewOpen] = useState(false);
   const [isDeleteOpen, setIsDeleteOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
   const [attachmentNoteDraft, setAttachmentNoteDraft] = useState<string>("");
   const [isCreating, setIsCreating] = useState(false);
-  const [validationErrors, setValidationErrors] = useState<{title?: string; description?: string}>({});
+  const [validationErrors, setValidationErrors] = useState<{ projectName?: string; title?: string; description?: string }>({});
   const [assigneesOpen, setAssigneesOpen] = useState(false);
   const [editAssigneesOpen, setEditAssigneesOpen] = useState(false);
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
@@ -333,7 +362,10 @@ export default function Tasks() {
   });
 
   const validateForm = () => {
-    const errors: {title?: string; description?: string} = {};
+    const errors: { projectName?: string; title?: string; description?: string } = {};
+    if (!projectName.trim()) {
+      errors.projectName = "Project name is required";
+    }
     if (!formData.title.trim()) {
       errors.title = "Task title is required";
     }
@@ -344,85 +376,150 @@ export default function Tasks() {
     return Object.keys(errors).length === 0;
   };
 
-  const handleCreateTask = async () => {
+  const resetProjectFlow = () => {
+    setProjectName("");
+    setProjectDescription("");
+    setProjectTasks([]);
+    setValidationErrors({});
+    setFormData({
+      title: "",
+      description: "",
+      priority: "medium",
+      status: "pending",
+      dueDate: "",
+      dueTime: "",
+      location: "",
+      attachmentFileName: "",
+      attachmentNote: "",
+    });
+    setSelectedAssignees([]);
+    setAttachmentFile(null);
+  };
+
+  const draftFromForm = (attachmentOverride?: CreateProjectTaskDraft["attachment"]) => {
+    const createdAt = new Date().toISOString().split("T")[0];
+    const att = attachmentOverride
+      ? attachmentOverride
+      : attachmentFile
+        ? {
+            fileName: attachmentFile.name,
+            url: "",
+            mimeType: attachmentFile.type,
+            size: attachmentFile.size,
+          }
+        : undefined;
+
+    return {
+      title: formData.title,
+      description: formData.description,
+      assignees: selectedAssignees,
+      priority: formData.priority,
+      status: formData.status,
+      dueDate: formData.dueDate,
+      dueTime: formData.dueTime,
+      location: formData.location,
+      createdAt,
+      attachmentFileName: formData.attachmentFileName || attachmentFile?.name || "",
+      attachmentNote: formData.attachmentNote || "",
+      attachment: att,
+    } satisfies CreateProjectTaskDraft;
+  };
+
+  const addTaskToProject = async () => {
+    const errors: { title?: string; description?: string } = {};
+    if (!formData.title.trim()) errors.title = "Task title is required";
+    if (!formData.description.trim()) errors.description = "Task description is required";
+
+    if (Object.keys(errors).length > 0) {
+      setValidationErrors((prev) => ({ ...prev, ...errors }));
+      return;
+    }
+
+    if (attachmentFile) {
+      const file = attachmentFile;
+      const attachment = await new Promise<CreateProjectTaskDraft["attachment"]>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error("Failed to read file"));
+        reader.onload = () => {
+          const url = typeof reader.result === "string" ? reader.result : "";
+          resolve({
+            fileName: file.name,
+            url,
+            mimeType: file.type,
+            size: file.size,
+          });
+        };
+        reader.readAsDataURL(file);
+      });
+
+      setProjectTasks((prev) => [...prev, draftFromForm(attachment)]);
+    } else {
+      setProjectTasks((prev) => [...prev, draftFromForm(undefined)]);
+    }
+
+    setValidationErrors((prev) => ({ ...prev, title: undefined, description: undefined }));
+    setFormData((prev) => ({
+      ...prev,
+      title: "",
+      description: "",
+      priority: "medium",
+      status: "pending",
+      dueDate: "",
+      dueTime: "",
+      location: "",
+      attachmentFileName: "",
+      attachmentNote: "",
+    }));
+    setSelectedAssignees([]);
+    setAttachmentFile(null);
+  };
+
+  const handleCreateProject = async () => {
     if (!validateForm()) return;
-    
+
     try {
       setIsCreating(true);
       setApiError(null);
-      const newTask = {
-        id: `TSK-${Date.now().toString().slice(-6)}`,
-        title: formData.title,
-        description: formData.description,
-        assignees: selectedAssignees,
-        priority: formData.priority,
-        status: formData.status,
-        dueDate: formData.dueDate,
-        dueTime: formData.dueTime,
-        location: formData.location,
-        createdAt: new Date().toISOString().split("T")[0],
-        attachmentFileName: formData.attachmentFileName || "",
-        attachmentNote: formData.attachmentNote || "",
+
+      const tasksToCreate: CreateProjectTaskDraft[] =
+        projectTasks.length > 0 ? projectTasks : [draftFromForm(undefined)];
+
+      const payload: CreateProjectPayload = {
+        name: projectName.trim(),
+        description: projectDescription,
+        tasks: tasksToCreate.map((t) => ({
+          title: t.title,
+          description: t.description,
+          assignees: t.assignees,
+          priority: t.priority,
+          status: t.status,
+          dueDate: t.dueDate,
+          dueTime: t.dueTime,
+          createdAt: t.createdAt,
+          attachmentFileName: t.attachmentFileName,
+          attachmentNote: t.attachmentNote,
+          attachment: t.attachment,
+        })),
       };
-      if (attachmentFile) {
-        console.log("Uploading file:", attachmentFile.name, "Size:", attachmentFile.size);
-        const fd = new FormData();
-        fd.append("title", formData.title);
-        fd.append("description", formData.description);
-        fd.append("assignees", JSON.stringify(selectedAssignees));
-        fd.append("priority", formData.priority);
-        fd.append("status", formData.status);
-        fd.append("dueDate", formData.dueDate);
-        fd.append("dueTime", formData.dueTime);
-        fd.append("location", formData.location || "");
-        fd.append("createdAt", newTask.createdAt);
 
-        fd.append("attachmentFileName", attachmentFile.name);
-        fd.append("attachmentNote", formData.attachmentNote);
-        fd.append("file", attachmentFile);
+      await apiFetch("/api/projects", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
 
-        try {
-          const response = await apiFetch<{ item: Task }>("/api/tasks/upload", {
-            method: "POST",
-            body: fd,
-          });
-          console.log("Upload response:", response);
-        } catch (uploadErr) {
-          console.error("Upload failed:", uploadErr);
-          throw new Error("File upload failed: " + (uploadErr instanceof Error ? uploadErr.message : "Unknown error"));
-        }
-      } else {
-        await apiFetch("/api/tasks", {
-          method: "POST",
-          body: JSON.stringify(newTask),
-        });
-      }
       await queryClient.invalidateQueries({ queryKey: ["tasks"] });
       setIsCreateOpen(false);
       setIsCreating(false);
-      setValidationErrors({});
-      setFormData({
-        title: "",
-        description: "",
-        priority: "medium",
-        status: "pending",
-        dueDate: "",
-        dueTime: "",
-        location: "",
-        attachmentFileName: "",
-        attachmentNote: "",
-      });
-      setSelectedAssignees([]);
-      setAttachmentFile(null);
+      resetProjectFlow();
       toast({
-        title: "Task created",
-        description: "Your task has been added to the list.",
+        title: "Project created",
+        description: "Your project has been created with tasks.",
       });
     } catch (e) {
       setIsCreating(false);
-      setApiError(e instanceof Error ? e.message : "Failed to create task");
+      setApiError(e instanceof Error ? e.message : "Failed to create project");
       toast({
-        title: "Failed to create task",
+        title: "Failed to create project",
         description: e instanceof Error ? e.message : "Something went wrong",
         variant: "destructive",
       });
@@ -702,19 +799,47 @@ export default function Tasks() {
         </div>
         <Button className="gap-2 w-full sm:w-auto" onClick={() => setIsCreateOpen(true)}>
           <Plus className="w-4 h-4" />
-          Create Task
+          Create Project
         </Button>
       </div>
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent className="w-[95vw] sm:max-w-[620px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Create Task</DialogTitle>
-            <DialogDescription>Add a task and assign it.</DialogDescription>
+            <DialogTitle>Create Project</DialogTitle>
+            <DialogDescription>Create a project and add multiple tasks.</DialogDescription>
           </DialogHeader>
 
-          <form onSubmit={(e) => { e.preventDefault(); void handleCreateTask(); }} className="space-y-4">
+          <form onSubmit={(e) => { e.preventDefault(); void handleCreateProject(); }} className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2 space-y-1.5">
+                <label className="text-sm font-medium">Project Name *</label>
+                <Input
+                  placeholder="Project name"
+                  value={projectName}
+                  onChange={(e) => {
+                    setProjectName(e.target.value);
+                    if (validationErrors.projectName) {
+                      setValidationErrors({ ...validationErrors, projectName: undefined });
+                    }
+                  }}
+                  className={validationErrors.projectName ? "border-destructive ring-1 ring-destructive" : ""}
+                />
+                {validationErrors.projectName && (
+                  <p className="text-xs text-destructive">{validationErrors.projectName}</p>
+                )}
+              </div>
+
+              <div className="sm:col-span-2 space-y-1.5">
+                <label className="text-sm font-medium">Project Description</label>
+                <Textarea
+                  placeholder="Short project description"
+                  className="min-h-[80px]"
+                  value={projectDescription}
+                  onChange={(e) => setProjectDescription(e.target.value)}
+                />
+              </div>
+
               <div className="sm:col-span-2 space-y-1.5">
                 <label className="text-sm font-medium">Title *</label>
                 <Input
@@ -934,45 +1059,76 @@ export default function Tasks() {
                     <label className="text-sm font-medium">Attachment Note</label>
                     <Input
                       value={attachmentNoteDraft}
-                      onChange={(e) => setAttachmentNoteDraft(e.target.value)}
+                      onChange={(e) => {
+                        setAttachmentNoteDraft(e.target.value);
+                        setFormData((prev) => ({ ...prev, attachmentNote: e.target.value }));
+                      }}
                       placeholder="e.g., before/after photo"
                     />
                   </div>
                 </div>
               </div>
 
-              <DialogFooter className="flex-col sm:flex-row gap-2">
+              <div className="sm:col-span-2 flex flex-col sm:flex-row gap-2">
                 <Button
                   type="button"
                   variant="outline"
                   onClick={() => {
-                    setIsCreateOpen(false);
-                    setSelectedAssignees([]);
-                    setAttachmentFile(null);
-                    setAttachmentNoteDraft("");
-                    setValidationErrors({});
+                    void addTaskToProject();
                   }}
-                  className="w-full sm:w-auto"
+                  className="w-full"
                 >
-                  Cancel
+                  Add Task
                 </Button>
-                <Button type="submit" className="gap-2 w-full sm:w-auto" disabled={isCreating}>
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={isCreating}
+                >
                   {isCreating ? (
                     <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      Creating...
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Creating
                     </>
                   ) : (
-                    <>
-                      <Plus className="w-4 h-4" />
-                      Create
-                    </>
+                    "Create Project"
                   )}
                 </Button>
-              </DialogFooter>
-            </form>
-        </DialogContent>
-      </Dialog>
+              </div>
+
+              {projectTasks.length > 0 && (
+                <div className="sm:col-span-2 space-y-2">
+                  <div className="text-sm font-medium">Tasks in Project</div>
+                  <div className="space-y-2">
+                    {projectTasks.map((t, idx) => (
+                      <div
+                        key={`${t.title}-${idx}`}
+                        className="border rounded-md p-3 flex items-start justify-between gap-3"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-medium truncate">{t.title}</div>
+                          <div className="text-xs text-muted-foreground truncate">
+                            {t.assignees?.join(", ") || "No assignees"}
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setProjectTasks((prev) => prev.filter((_, i) => i !== idx))}
+                        >
+                          Remove
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+            )}
+        </form>
+            
+            
+          </DialogContent>
+          </Dialog>
 
       <Dialog
         open={isViewOpen}

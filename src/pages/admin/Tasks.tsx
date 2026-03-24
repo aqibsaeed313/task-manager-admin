@@ -75,6 +75,7 @@ import { apiFetch, createResource, deleteResource, listResource, updateResource 
 import { getAuthState } from "@/lib/auth";
 import { getAuthState as getAdminAuthState } from "@/lib/admin/auth";
 import { useSocket } from "@/contexts/SocketContext";
+
 interface Task {
   id: string;
   title: string;
@@ -88,6 +89,11 @@ interface Task {
   dueDate: string;
   dueTime: string;
   createdAt: string;
+  projectId?: string;
+  project?: {
+    name?: string;
+    description?: string;
+  };
   attachmentFileName?: string;
   attachmentNote?: string;
   attachment?: {
@@ -113,6 +119,7 @@ interface User {
   role: "admin" | "manager" | "employee";
   status: "active" | "inactive" | "pending";
 }
+
 type TaskComment = {
   id: string;
   taskId: string;
@@ -120,6 +127,31 @@ type TaskComment = {
   authorUsername: string;
   authorRole?: string;
   createdAt: string;
+};
+
+type CreateProjectTaskDraft = {
+  title: string;
+  description: string;
+  assignees: string[];
+  priority: Task["priority"];
+  status: Task["status"];
+  dueDate: string;
+  dueTime?: string;
+  createdAt: string;
+  attachmentFileName?: string;
+  attachmentNote?: string;
+  attachment?: {
+    fileName: string;
+    url: string;
+    mimeType: string;
+    size: number;
+  };
+};
+
+type CreateProjectPayload = {
+  name: string;
+  description: string;
+  tasks: Array<CreateProjectTaskDraft>;
 };
 
 // Enhanced priority classes with beautiful gradients
@@ -150,17 +182,23 @@ const assigneesLabel = (assignees: string[]) => {
   return (assignees || []).filter(Boolean).join(", ");
 };
 
+const getDisplayTaskId = (id: string) => {
+  const v = String(id || "").trim();
+  if (!v) return "";
+  return `#${v.slice(-6).toUpperCase()}`;
+};
+
 // Calculate task statistics for an employee
 const getEmployeeTaskStats = (employeeName: string, allTasks: Task[]) => {
-  const employeeTasks = allTasks.filter((task) => 
+  const employeeTasks = allTasks.filter((task) =>
     task.assignees?.includes(employeeName) || task.assignee === employeeName
   );
-  
+
   const total = employeeTasks.length;
   const completed = employeeTasks.filter((t) => t.status === "completed").length;
   const pending = employeeTasks.filter((t) => t.status === "pending" || t.status === "in-progress").length;
   const overdue = employeeTasks.filter((t) => t.status === "overdue").length;
-  
+
   return { total, completed, pending, overdue };
 };
 
@@ -234,589 +272,295 @@ const Tasks = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [priorityFilter, setPriorityFilter] = useState("all");
+
   const [tasksList, setTasksList] = useState<Task[]>(() => []);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [apiError, setApiError] = useState<string | null>(null);
   const [createTaskOpen, setCreateTaskOpen] = useState(false);
-  const [assigneesOpen, setAssigneesOpen] = useState(false);
-  const [editAssigneesOpen, setEditAssigneesOpen] = useState(false);
-  const [reassignAssigneesOpen, setReassignAssigneesOpen] = useState(false);
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [viewDetailsOpen, setViewDetailsOpen] = useState(false);
-  const [editTaskOpen, setEditTaskOpen] = useState(false);
-  const [reassignOpen, setReassignOpen] = useState(false);
-  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
-  const [comments, setComments] = useState<TaskComment[]>([]);
-  const [commentsLoading, setCommentsLoading] = useState(false);
-  const [commentDraft, setCommentDraft] = useState("");
-  const [commentError, setCommentError] = useState<string | null>(null);
-  const [statusSaving, setStatusSaving] = useState(false);
-  const [typingUsers, setTypingUsers] = useState<string[]>([]);
-  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const currentUsername = getAuthState().username || getAdminAuthState().username || "";
-  const [hoveredTask, setHoveredTask] = useState<string | null>(null);
+
   const [editFormData, setEditFormData] = useState({
-
     title: "",
-
     description: "",
-
     assignees: [] as string[],
-
     priority: "medium" as Task["priority"],
-
     status: "pending" as Task["status"],
-
     dueDate: "",
-
     dueTime: "",
-
     attachmentFileName: "",
-
     attachmentNote: "",
-
   });
-
-
 
   const [attachmentFile, setAttachmentFile] = useState<File | null>(null);
 
   const [isCreating, setIsCreating] = useState(false);
 
-  const [validationErrors, setValidationErrors] = useState<{title?: string; description?: string}>({});
-
-  const [formData, setFormData] = useState({
-
-    title: "",
-
-    description: "",
-
-    assignees: [] as string[],
-
-    priority: "medium" as Task["priority"],
-
-    status: "pending" as Task["status"],
-
-    dueDate: "",
-
-    dueTime: "",
-
-    attachmentFileName: "",
-
-    attachmentNote: "",
-
-  });
-
-
-
-  useEffect(() => {
-
-    let mounted = true;
-
-    const load = async () => {
-
-      try {
-
-        setLoading(true);
-
-        setApiError(null);
-
-
-
-        // Fetch tasks
-
-        const taskList = await listResource<Task>("tasks");
-
-        if (!mounted) return;
-
-        setTasksList(taskList.map(normalizeTaskAssignees));
-
-
-
-        // Fetch employees from employees API
-
-        let allEmployees: Employee[] = [];
-
-        try {
-
-          const employeeList = await listResource<Employee>("employees");
-
-          if (mounted) {
-
-            allEmployees = employeeList.filter((e) => e.status === "active");
-
-          }
-
-        } catch (empErr) {
-
-          console.error("Failed to load employees:", empErr);
-
-        }
-
-
-
-        // Fetch users with employee role from users API
-
-        try {
-
-          const userList = await listResource<User>("users");
-
-          if (mounted) {
-
-            const employeeUsers = userList
-
-              .filter((u) => u.role === "employee" && (u.status === "active" || u.status === "pending"))
-
-              .map((u) => ({
-
-                id: u.id,
-
-                name: u.name,
-
-                initials: getInitials(u.name),
-
-                email: u.email,
-
-                status: "active" as const,
-
-              }));
-
-
-
-            // Merge both lists (remove duplicates by email)
-
-            employeeUsers.forEach((eu) => {
-
-              if (!allEmployees.some((e) => e.email === eu.email)) {
-
-                allEmployees.push(eu);
-
-              }
-
-            });
-
-          }
-
-        } catch (userErr) {
-
-          console.error("Failed to load users:", userErr);
-
-        }
-
-
-
-        if (mounted) {
-
-          setEmployees(allEmployees);
-
-        }
-
-      } catch (e) {
-
-        if (!mounted) return;
-
-        setApiError(e instanceof Error ? e.message : "Failed to load data");
-
-      } finally {
-
-        if (!mounted) return;
-
-        setLoading(false);
-
-      }
-
-    };
-
-    void load();
-
-    return () => {
-
-      mounted = false;
-
-    };
-
+  const [validationErrors, setValidationErrors] = useState<{ projectName?: string; title?: string; description?: string }>({});
+
+  const [projectName, setProjectName] = useState("");
+  const [projectDescription, setProjectDescription] = useState("");
+  const [projectTasks, setProjectTasks] = useState<CreateProjectTaskDraft[]>([]);
+
+  const [editTaskOpen, setEditTaskOpen] = useState(false);
+  const [reassignOpen, setReassignOpen] = useState(false);
+  const [viewDetailsOpen, setViewDetailsOpen] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [assigneesOpen, setAssigneesOpen] = useState(false);
+  const [editAssigneesOpen, setEditAssigneesOpen] = useState(false);
+  const [reassignAssigneesOpen, setReassignAssigneesOpen] = useState(false);
+  const [hoveredTask, setHoveredTask] = useState<string | null>(null);
+
+  const [comments, setComments] = useState<TaskComment[]>([]);
+  const [commentDraft, setCommentDraft] = useState("");
+  const [commentError, setCommentError] = useState<string | null>(null);
+  const [commentsLoading, setCommentsLoading] = useState(false);
+
+  const currentUsername = useMemo(() => {
+    const base = getAuthState();
+    if (base?.username) return base.username;
+    const admin = getAdminAuthState();
+    return admin?.user?.name || "";
   }, []);
 
-
-
-  // Set today's date as created date when modal opens
-
-  useEffect(() => {
-
-    if (createTaskOpen) {
-
-      const today = new Date().toISOString().split("T")[0];
-
-      setFormData((prev) => ({ ...prev, dueDate: today }));
-
-    }
-
-  }, [createTaskOpen]);
-
-
+  // Bug report states
+  const [createBugOpen, setCreateBugOpen] = useState(false);
+  const [bugTask, setBugTask] = useState<Task | null>(null);
+  const [bugTitle, setBugTitle] = useState("");
+  const [bugDescription, setBugDescription] = useState("");
+  const [bugImageFile, setBugImageFile] = useState<File | null>(null);
+  const [bugImagePreviewUrl, setBugImagePreviewUrl] = useState("");
+  const [bugImageOpen, setBugImageOpen] = useState(false);
+  const [bugSubmitting, setBugSubmitting] = useState(false);
+  const [bugError, setBugError] = useState<string | null>(null);
 
   const refreshTasks = async () => {
-
-    const list = await listResource<Task>("tasks");
-
-    setTasksList(list.map(normalizeTaskAssignees));
-
+    try {
+      setLoading(true);
+      setApiError(null);
+      const tasks = await listResource<Task>("tasks");
+      setTasksList(tasks.map(normalizeTaskAssignees));
+    } catch (e) {
+      setApiError(e instanceof Error ? e.message : "Failed to load tasks");
+    } finally {
+      setLoading(false);
+    }
   };
-
-
 
   const loadComments = async (taskId: string) => {
-
     try {
-
       setCommentsLoading(true);
-
       setCommentError(null);
-
-      const res = await apiFetch<{ items: TaskComment[] }>(
-
-        `/api/tasks/${encodeURIComponent(taskId)}/comments`
-
-      );
-
-      setComments(Array.isArray(res.items) ? res.items : []);
-
-    } catch (e) {
-
-      setCommentError(e instanceof Error ? e.message : "Failed to load messages");
-
       setComments([]);
-
+      void taskId;
+    } catch (e) {
+      setCommentError(e instanceof Error ? e.message : "Failed to load comments");
     } finally {
-
       setCommentsLoading(false);
-
     }
-
   };
-
-
 
   const sendComment = async () => {
-
-    if (!selectedTask) return;
-
-    const msg = commentDraft.trim();
-
-    if (!msg) return;
-
-    // Emit stop typing before sending
-
-    emitStopTyping(selectedTask.id);
-
-    // Clear draft immediately for better UX
+    const message = commentDraft.trim();
+    if (!selectedTask || !message) return;
 
     setCommentDraft("");
+    setCommentError(null);
 
-    try {
-
-      setCommentError(null);
-
-      // Send via API - WebSocket will broadcast and add to state
-
-      await apiFetch<{ item: TaskComment }>(
-
-        `/api/tasks/${encodeURIComponent(selectedTask.id)}/comments`,
-
-        {
-
-          method: "POST",
-
-          body: JSON.stringify({ message: msg }),
-
-        }
-
-      );
-
-      // Note: Message will be added via WebSocket broadcast, not here
-
-      // This prevents duplicates since WebSocket sends to all including sender
-
-    } catch (e) {
-
-      setCommentError(e instanceof Error ? e.message : "Failed to send message");
-
-    }
-
+    setComments((prev) => [
+      ...prev,
+      {
+        id: `${Date.now()}`,
+        taskId: selectedTask.id,
+        message,
+        authorUsername: currentUsername || "You",
+        authorRole: "admin",
+        createdAt: new Date().toISOString(),
+      },
+    ]);
   };
 
-
-
-  const updateStatus = async (next: Task["status"]) => {
-
-    if (!selectedTask) return;
-
-    try {
-
-      setStatusSaving(true);
-
-      setCommentError(null);
-
-      const res = await apiFetch<{ item: Task }>(
-
-        `/api/tasks/${encodeURIComponent(selectedTask.id)}/status`,
-
-        {
-
-          method: "PATCH",
-
-          body: JSON.stringify({ status: next }),
-
-        }
-
-      );
-
-      setSelectedTask(normalizeTaskAssignees(res.item));
-
-      await refreshTasks();
-
-    } catch (e) {
-
-      setCommentError(e instanceof Error ? e.message : "Failed to update status");
-
-    } finally {
-
-      setStatusSaving(false);
-
-    }
-
+  const openCreateBug = (task: Task) => {
+    setBugTask(task);
+    setCreateBugOpen(true);
   };
 
-
-
-  // WebSocket effect for real-time comments
-  useEffect(() => {
-    if (!socket || !isConnected || !selectedTask) return;
-
-    // Join task room
-    joinTask(selectedTask.id);
-
-    // Listen for new comments
-    const handleNewComment = (comment: TaskComment) => {
-      setComments((prev) => {
-        // Avoid duplicates
-        if (prev.some((c) => c.id === comment.id)) return prev;
-        return [...prev, comment];
-      });
-    };
-
-    // Listen for typing indicators
-    const handleTyping = ({ taskId, username }: { taskId: string; username: string }) => {
-      if (taskId === selectedTask.id && username !== currentUsername) {
-        setTypingUsers((prev) => {
-          if (prev.includes(username)) return prev;
-          return [...prev, username];
-        });
-      }
-    };
-
-    // Listen for stop typing
-    const handleStopTyping = ({ taskId }: { taskId: string }) => {
-      if (taskId === selectedTask.id) {
-        // Will be cleared by timeout or next typing event
-      }
-    };
-
-    socket.on("new-comment", handleNewComment);
-    socket.on("typing", handleTyping);
-    socket.on("stop-typing", handleStopTyping);
-
-    // Cleanup
-    return () => {
-      socket.off("new-comment", handleNewComment);
-      socket.off("typing", handleTyping);
-      socket.off("stop-typing", handleStopTyping);
-      leaveTask(selectedTask.id);
-      setTypingUsers([]);
-    };
-  }, [socket, isConnected, selectedTask, joinTask, leaveTask, currentUsername]);
-
-  const displayIdByTaskId = useMemo(() => {
-    return new Map(
-      tasksList.map((t, idx) => {
-        const displayId = `TSK${String(idx + 1).padStart(3, "0")}`;
-        return [t.id, displayId] as const;
-      }),
-    );
-  }, [tasksList]);
-
-  const getDisplayTaskId = (taskId: string) => {
-
-    return displayIdByTaskId.get(taskId) || taskId;
-
+  const submitBugReport = async () => {
+    // Placeholder for bug submission
+    console.log("Submit bug report");
   };
 
-
+  const [formData, setFormData] = useState({
+    title: "",
+    description: "",
+    assignees: [] as string[],
+    priority: "medium" as Task["priority"],
+    status: "pending" as Task["status"],
+    dueDate: "",
+    dueTime: "",
+    attachmentFileName: "",
+    attachmentNote: "",
+  });
 
   const validateForm = () => {
+    const errors: { projectName?: string; title?: string; description?: string } = {};
 
-    const errors: {title?: string; description?: string} = {};
+    if (!projectName.trim()) {
+      errors.projectName = "Project name is required";
+    }
 
     if (!formData.title.trim()) {
-
       errors.title = "Task title is required";
-
     }
 
     if (!formData.description.trim()) {
-
       errors.description = "Task description is required";
-
     }
 
     setValidationErrors(errors);
 
     return Object.keys(errors).length === 0;
-
   };
 
+  const resetProjectFlow = () => {
+    setProjectName("");
+    setProjectDescription("");
+    setProjectTasks([]);
+    setValidationErrors({});
+    setFormData({
+      title: "",
+      description: "",
+      assignees: [],
+      priority: "medium",
+      status: "pending",
+      dueDate: "",
+      dueTime: "",
+      attachmentFileName: "",
+      attachmentNote: "",
+    });
+    setAttachmentFile(null);
+  };
 
+  const draftFromForm = (attachmentOverride?: CreateProjectTaskDraft["attachment"]) => {
+    const createdAt = new Date().toISOString().split("T")[0];
 
-  const handleCreateTask = async () => {
+    const att = attachmentOverride
+      ? attachmentOverride
+      : attachmentFile
+        ? {
+            fileName: attachmentFile.name,
+            url: "",
+            mimeType: attachmentFile.type,
+            size: attachmentFile.size,
+          }
+        : undefined;
 
-    if (!validateForm()) return;
+    return {
+      title: formData.title,
+      description: formData.description,
+      assignees: formData.assignees,
+      priority: formData.priority,
+      status: formData.status,
+      dueDate: formData.dueDate,
+      dueTime: formData.dueTime,
+      createdAt,
+      attachmentFileName: formData.attachmentFileName || attachmentFile?.name || "",
+      attachmentNote: formData.attachmentNote || "",
+      attachment: att,
+    } satisfies CreateProjectTaskDraft;
+  };
 
-    
+  const addTaskToProject = async () => {
+    const errors: { title?: string; description?: string } = {};
 
-    try {
+    if (!formData.title.trim()) errors.title = "Task title is required";
 
-      setIsCreating(true);
+    if (!formData.description.trim()) errors.description = "Task description is required";
 
-      setApiError(null);
-
-      const newTask: Task = {
-
-        id: `TSK-${Date.now().toString().slice(-6)}`,
-
-        title: formData.title,
-
-        description: formData.description,
-
-        assignees: formData.assignees,
-
-        priority: formData.priority,
-
-        status: formData.status,
-
-        dueDate: formData.dueDate,
-
-        dueTime: formData.dueTime,
-
-        createdAt: new Date().toISOString().split("T")[0],
-
-        attachmentFileName: formData.attachmentFileName || "",
-
-        attachmentNote: formData.attachmentNote || "",
-
-      };
-
-      if (attachmentFile) {
-
-        console.log("Uploading file:", attachmentFile.name, "Size:", attachmentFile.size);
-
-        const fd = new FormData();
-
-        fd.append("title", formData.title);
-
-        fd.append("description", formData.description);
-
-        fd.append("assignees", JSON.stringify(formData.assignees));
-
-        fd.append("priority", formData.priority);
-
-        fd.append("status", formData.status);
-
-        fd.append("dueDate", formData.dueDate);
-
-        fd.append("dueTime", formData.dueTime);
-
-        fd.append("createdAt", newTask.createdAt);
-
-
-
-        fd.append("attachmentFileName", attachmentFile.name);
-
-        fd.append("attachmentNote", formData.attachmentNote);
-
-        fd.append("file", attachmentFile);
-
-
-
-        try {
-
-          const response = await apiFetch<{ item: Task }>("/api/tasks/upload", {
-
-            method: "POST",
-
-            body: fd,
-
-          });
-
-          console.log("Upload response:", response);
-
-        } catch (uploadErr) {
-
-          console.error("Upload failed:", uploadErr);
-
-          throw new Error("File upload failed: " + (uploadErr instanceof Error ? uploadErr.message : "Unknown error"));
-
-        }
-
-      } else {
-
-        await createResource<Task>("tasks", newTask);
-
-      }
-
-      await refreshTasks();
-      setCreateTaskOpen(false);
-      setIsCreating(false);
-      setValidationErrors({});
-     setFormData({
-        title: "",
-        description: "",
-        assignees: [],
-        priority: "medium",
-        status: "pending",
-        dueDate: "",
-        dueTime: "",
-        attachmentFileName: "",
-        attachmentNote: "",
-      });
-
-      setAttachmentFile(null);
-
-    } catch (e) {
-
-      setIsCreating(false);
-
-      setApiError(e instanceof Error ? e.message : "Failed to create task");
-
+    if (Object.keys(errors).length > 0) {
+      setValidationErrors((prev) => ({ ...prev, ...errors }));
+      return;
     }
 
+    const toDataUrl = (file: File) =>
+      new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ""));
+        reader.onerror = () => reject(new Error("Failed to read file"));
+        reader.readAsDataURL(file);
+      });
+
+    if (attachmentFile) {
+      const attachment = {
+        fileName: attachmentFile.name,
+        url: await toDataUrl(attachmentFile),
+        mimeType: attachmentFile.type,
+        size: attachmentFile.size,
+      };
+
+      setProjectTasks((prev) => [...prev, draftFromForm(attachment)]);
+    } else {
+      setProjectTasks((prev) => [...prev, draftFromForm(undefined)]);
+    }
+
+    setValidationErrors((prev) => ({ ...prev, title: undefined, description: undefined }));
+
+    setFormData({
+      title: "",
+      description: "",
+      assignees: [],
+      priority: "medium",
+      status: "pending",
+      dueDate: formData.dueDate,
+      dueTime: "",
+      attachmentFileName: "",
+      attachmentNote: "",
+    });
+
+    setAttachmentFile(null);
   };
+
+  const handleCreateProject = async () => {
+    if (!validateForm()) return;
+
+    try {
+      setIsCreating(true);
+      setApiError(null);
+
+      const tasksToCreate: CreateProjectTaskDraft[] =
+        projectTasks.length > 0 ? projectTasks : [draftFromForm(undefined)];
+
+      const payload: CreateProjectPayload = {
+        name: projectName.trim(),
+        description: projectDescription,
+        tasks: tasksToCreate,
+      };
+
+      await apiFetch("/api/projects", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+
+      await refreshTasks();
+
+      setCreateTaskOpen(false);
+      setIsCreating(false);
+      resetProjectFlow();
+    } catch (e) {
+      setIsCreating(false);
+      setApiError(e instanceof Error ? e.message : "Failed to create project");
+    }
+  };
+
   const handleViewDetails = (task: Task) => {
-
     setEditTaskOpen(false);
-
     setReassignOpen(false);
-
     setSelectedTask(normalizeTaskAssignees(task));
-
     setViewDetailsOpen(true);
-
     void loadComments(task.id);
-
   };
 
   const handleEditTask = (task: Task) => {
-
     setViewDetailsOpen(false);
 
     setReassignOpen(false);
@@ -1278,22 +1022,7 @@ const Tasks = () => {
       console.error("PDF generation failed:", e);
 
       setApiError(e instanceof Error ? e.message : "Failed to generate PDF");
-
-    }
-
   };
-
-
-
-  const [createBugOpen, setCreateBugOpen] = useState(false);
-  const [bugTask, setBugTask] = useState<Task | null>(null);
-  const [bugTitle, setBugTitle] = useState("");
-  const [bugDescription, setBugDescription] = useState("");
-  const [bugImageFile, setBugImageFile] = useState<File | null>(null);
-  const [bugImagePreviewUrl, setBugImagePreviewUrl] = useState("");
-  const [bugImageOpen, setBugImageOpen] = useState(false);
-  const [bugSubmitting, setBugSubmitting] = useState(false);
-  const [bugError, setBugError] = useState<string | null>(null);
 
   const openCreateBug = (task: Task) => {
     setBugTask(task);
@@ -1490,7 +1219,7 @@ const Tasks = () => {
 
                     <span className="sm:hidden">Create</span>
 
-                    <span className="hidden sm:inline">Create Task</span>
+                    <span className="hidden sm:inline">Create Project</span>
 
                   </Button>
 
@@ -1527,35 +1256,22 @@ const Tasks = () => {
                     </Button>
 
                     <DialogTitle
-
                       className="text-lg sm:text-xl bg-gradient-to-r from-primary to-primary/60 bg-clip-text text-transparent"
-
                     >
-
-                      Create New Task
-
+                      Create New Project
                     </DialogTitle>
 
                     <Button
-
-                      onClick={handleCreateTask}
-
+                      onClick={handleCreateProject}
                       className="bg-gradient-to-r from-primary to-primary/50 text-white h-9 px-4 -mt-3 -mr-3 text-sm shadow-lg hover:shadow-xl transition-all duration-300"
-
                     >
-
                       <Plus className="h-4 w-4 mr-1" />
-
                       Create
-
                     </Button>
-
                   </div>
 
                   <DialogDescription className="text-xs sm:text-sm text-center">
-
-                    Create and assign a new task to team members
-
+                    Create a project with one or more tasks
                   </DialogDescription>
 
                 </DialogHeader>
@@ -1574,10 +1290,80 @@ const Tasks = () => {
 
                 >
 
-                  {/* Task Title */}
-
+                  {/* Project Name */}
                   <div>
+                    <label className="block text-xs sm:text-sm font-medium mb-1.5">
+                      Project Name *
+                    </label>
+                    <input
+                      type="text"
+                      value={projectName}
+                      onChange={(e) => {
+                        setProjectName(e.target.value);
+                        if (validationErrors.projectName) setValidationErrors({...validationErrors, projectName: undefined});
+                      }}
+                      placeholder="Enter project name"
+                      className={`w-full rounded-lg border px-3 py-2 text-sm sm:text-base focus:ring-2 focus:ring-primary/20 transition-all ${validationErrors.projectName ? 'border-destructive ring-1 ring-destructive' : ''}`}
+                    />
+                    {validationErrors.projectName && (
+                      <p className="text-xs text-destructive mt-1">{validationErrors.projectName}</p>
+                    )}
+                  </div>
 
+                  {/* Project Description */}
+                  <div>
+                    <label className="block text-xs sm:text-sm font-medium mb-1.5">
+                      Project Description
+                    </label>
+                    <textarea
+                      value={projectDescription}
+                      onChange={(e) => setProjectDescription(e.target.value)}
+                      placeholder="Optional project description"
+                      className="w-full rounded-lg border px-3 py-2 text-sm sm:text-base min-h-[60px] resize-none focus:ring-2 focus:ring-primary/20 transition-all"
+                    />
+                  </div>
+
+                  {/* Task List */}
+                  {projectTasks.length > 0 && (
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs sm:text-sm font-medium">Tasks ({projectTasks.length})</label>
+                      </div>
+                      <div className="space-y-2 max-h-48 overflow-y-auto border rounded-lg p-2 bg-muted/20">
+                        {projectTasks.map((t, idx) => (
+                          <div key={idx} className="flex items-center justify-between text-xs bg-background p-2 rounded border">
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium truncate">{t.title}</div>
+                              <div className="text-muted-foreground truncate">{t.description}</div>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => setProjectTasks(prev => prev.filter((_, i) => i !== idx))}
+                              className="h-6 w-6 p-0 text-destructive hover:bg-destructive/10"
+                            >
+                              <X className="h-3 w-3" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Add Task Button */}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={addTaskToProject}
+                    className="w-full border-dashed"
+                  >
+                    <Plus className="h-4 w-4 mr-2" />
+                    Add Task
+                  </Button>
+
+                  {/* Task Title */}
+                  <div>
                     <label className="block text-xs sm:text-sm font-medium mb-1.5">
 
                       Task Title *
@@ -2038,7 +1824,7 @@ const Tasks = () => {
 
                       <Button 
 
-                        onClick={handleCreateTask} 
+                        onClick={handleCreateProject} 
 
                         disabled={isCreating}
 
@@ -2062,7 +1848,7 @@ const Tasks = () => {
 
                             <Plus className="h-6 w-6 mr-3 flex-shrink-0" />
 
-                            Create Task
+                            Create Project
 
                           </>
 
@@ -4667,21 +4453,44 @@ const Tasks = () => {
       {/* Add global styles for grid pattern */}
 
       <style>{`
-
         .bg-grid-white {
-
           background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32' width='32' height='32' fill='none' stroke='rgb(255 255 255 / 0.05)'%3e%3cpath d='M0 .5H31.5V32'/%3e%3c/svg%3e");
-
         }
-
+        .bg-grid-white {
+          background-size: 8px 8px;
+        }
       `}</style>
 
+      {/* Projects Section */}
+      {tasksList.some(t => t.projectId) && (
+        <motion.div variants={itemVariants} className="mt-6 space-y-4">
+          <h2 className="text-lg font-semibold">Projects</h2>
+          <div className="grid gap-4">
+            {Array.from(new Set(tasksList.filter(t => t.projectId).map(t => t.projectId))).map(projectId => {
+              const projectTasks = tasksList.filter(t => t.projectId === projectId);
+              const project = projectTasks[0]?.project;
+              return (
+                <div key={String(projectId)} className="border rounded-lg p-4 bg-muted/20">
+                  <h3 className="font-medium">{project?.name || 'Untitled Project'}</h3>
+                  {project?.description && <p className="text-sm text-muted-foreground">{project.description}</p>}
+                  <div className="mt-2 space-y-1">
+                    {projectTasks.map(task => (
+                      <div key={task.id} className="text-sm pl-2 border-l-2 border-primary/30">
+                        {task.title}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </motion.div>
+      )}
+
     </AdminLayout>
-
   );
-
 };
 
-
+}
 
 export default Tasks;
