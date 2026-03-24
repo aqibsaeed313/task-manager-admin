@@ -376,6 +376,28 @@ export default function Login() {
                   </Button>
                 </motion.div>
               </motion.div>
+
+              {/* Employee Login Link */}
+              <motion.div variants={itemVariants} className="pt-2">
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <div className="w-full border-t border-slate-200 dark:border-slate-700" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-white/90 dark:bg-slate-950/90 px-2 text-muted-foreground">
+                      Or
+                    </span>
+                  </div>
+                </div>
+                <div className="mt-4 text-center">
+                  <button
+                    onClick={() => navigate("/login/employee")}
+                    className="text-sm text-[#133767] hover:text-[#1a4585] font-medium hover:underline transition-colors"
+                  >
+                    Login as Employee
+                  </button>
+                </div>
+              </motion.div>
             </CardContent>
           </Card>
         </motion.div>
