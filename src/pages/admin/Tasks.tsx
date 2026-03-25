@@ -99,6 +99,7 @@ interface Task {
   dueTime?: string;
   location?: string;
   createdAt: string;
+  projectId?: string;
   attachmentFileName?: string;
   attachmentNote?: string;
   attachment?: {
@@ -265,6 +266,7 @@ export default function Tasks() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProject, setSelectedProject] = useState<ProjectWithTasks | null>(null);
   const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
+  const [isDirectTask, setIsDirectTask] = useState(false);
   const [isLoadingProject, setIsLoadingProject] = useState(false);
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
   const [editSelectedAssignees, setEditSelectedAssignees] = useState<string[]>([]);
@@ -633,7 +635,7 @@ export default function Tasks() {
   };
 
   const handleCreateTask = async () => {
-    if (!selectedProject) {
+    if (!isDirectTask && !selectedProject) {
       toast({ title: "Select a project first", description: "Please choose a project before creating a task.", variant: "destructive" });
       return;
     }
@@ -668,33 +670,40 @@ export default function Tasks() {
           })
         : undefined;
 
+      const taskPayload: Record<string, any> = {
+        title: formData.title,
+        description: formData.description,
+        assignees: selectedAssignees,
+        priority: formData.priority,
+        status: formData.status,
+        dueDate: formData.dueDate || nowDate,
+        dueTime: formData.dueTime,
+        location: formData.location,
+        createdAt: nowDate,
+        attachmentFileName: attachmentFile?.name || "",
+        attachmentNote: formData.attachmentNote,
+        attachment,
+      };
+
+      // Only add projectId if not a direct task
+      if (!isDirectTask && selectedProject) {
+        taskPayload.projectId = selectedProject.id;
+      }
+
       await apiFetch("/api/tasks", {
         method: "POST",
-        body: JSON.stringify({
-          title: formData.title,
-          description: formData.description,
-          assignees: selectedAssignees,
-          priority: formData.priority,
-          status: formData.status,
-          dueDate: formData.dueDate || nowDate,
-          dueTime: formData.dueTime,
-          location: formData.location,
-          createdAt: nowDate,
-          attachmentFileName: attachmentFile?.name || "",
-          attachmentNote: formData.attachmentNote,
-          attachment,
-          projectId: selectedProject.id,
-        }),
+        body: JSON.stringify(taskPayload),
       });
 
       await queryClient.invalidateQueries({ queryKey: ["tasks"] });
       await queryClient.invalidateQueries({ queryKey: ["projects"] });
-      if (selectedProject?.id) {
+      if (!isDirectTask && selectedProject?.id) {
         void loadProject(selectedProject.id);
       }
 
       setIsCreating(false);
       setIsCreateTaskOpen(false);
+      setIsDirectTask(false);
       setFormData({
         title: "",
         description: "",
@@ -712,7 +721,7 @@ export default function Tasks() {
 
       toast({
         title: "Task created",
-        description: "New task has been added to the project.",
+        description: isDirectTask ? "New standalone task has been created." : "New task has been added to the project.",
       });
     } catch (e) {
       setIsCreating(false);
@@ -1009,10 +1018,19 @@ export default function Tasks() {
               </Button>
             </>
           ) : (
-            <Button className="gap-2" onClick={() => setIsCreateOpen(true)}>
-              <Plus className="w-4 h-4" />
-              Create Project
-            </Button>
+            <>
+              <Button className="gap-2" onClick={() => setIsCreateOpen(true)}>
+                <Plus className="w-4 h-4" />
+                Create Project
+              </Button>
+              <Button className="gap-2" onClick={() => {
+                setIsDirectTask(true);
+                setIsCreateTaskOpen(true);
+              }}>
+                <Plus className="w-4 h-4" />
+                Create Task
+              </Button>
+            </>
           )}
         </div>
       </div>
@@ -1095,59 +1113,117 @@ export default function Tasks() {
           </div>
         </div>
       ) : (
-        <div className="bg-card rounded-xl border border-border shadow-card p-4 mb-4">
-          <h2 className="font-semibold text-lg mb-3">Projects</h2>
-          {projectsQuery.isLoading ? (
-            <p className="text-muted-foreground">Loading projects...</p>
-          ) : projectsQuery.isError ? (
-            <p className="text-destructive">Failed to load projects</p>
-          ) : projects.length === 0 ? (
-            <p className="text-muted-foreground">No projects found. Create one to begin.</p>
-          ) : (
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-              {projects.map((project) => {
-                const assigneeList = Array.isArray(project.assignees) && project.assignees.length > 0 
-                  ? project.assignees 
-                  : [];
-                const taskNum = project.taskCount ?? 0;
-                
-                return (
-                  <button
-                    key={project.id}
-                    onClick={() => void loadProject(project.id)}
-                    className="text-left p-3 sm:p-4 rounded-lg border border-border hover:border-primary transition bg-card shadow-sm hover:shadow-card"
-                  >
-                    <div className="flex items-center gap-2 mb-2">
-                      {project.logo?.url ? (
-                        <img src={project.logo.url} alt={`${project.name} logo`} className="w-10 h-10 rounded-md object-cover" />
-                      ) : (
-                        <div className="w-10 h-10 rounded-md bg-muted/40 flex items-center justify-center text-xs text-muted-foreground">Logo</div>
-                      )}
-                      <div className="min-w-0">
-                        <p className="font-medium truncate">{project.name}</p>
-                        <p className="text-xs text-muted-foreground truncate">{project.description || "No description"}</p>
+        <>
+          <div className="bg-card rounded-xl border border-border shadow-card p-4 mb-4">
+            <h2 className="font-semibold text-lg mb-3">Projects</h2>
+            {projectsQuery.isLoading ? (
+              <p className="text-muted-foreground">Loading projects...</p>
+            ) : projectsQuery.isError ? (
+              <p className="text-destructive">Failed to load projects</p>
+            ) : projects.length === 0 ? (
+              <p className="text-muted-foreground">No projects found. Create one to begin.</p>
+            ) : (
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {projects.map((project) => {
+                  const assigneeList = Array.isArray(project.assignees) && project.assignees.length > 0 
+                    ? project.assignees 
+                    : [];
+                  const taskNum = project.taskCount ?? 0;
+                  
+                  return (
+                    <button
+                      key={project.id}
+                      onClick={() => void loadProject(project.id)}
+                      className="text-left p-3 sm:p-4 rounded-lg border border-border hover:border-primary transition bg-card shadow-sm hover:shadow-card"
+                    >
+                      <div className="flex items-center gap-2 mb-2">
+                        {project.logo?.url ? (
+                          <img src={project.logo.url} alt={`${project.name} logo`} className="w-10 h-10 rounded-md object-cover" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-md bg-muted/40 flex items-center justify-center text-xs text-muted-foreground">Logo</div>
+                        )}
+                        <div className="min-w-0">
+                          <p className="font-medium truncate">{project.name}</p>
+                          <p className="text-xs text-muted-foreground truncate">{project.description || "No description"}</p>
+                        </div>
                       </div>
-                    </div>
 
-                    <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
-                      <span className="truncate">{assigneeList.length > 0 ? assigneeList.join(", ") : "No assignees"}</span>
-                      <span className="ml-2 flex-shrink-0">{taskNum} task{taskNum === 1 ? "" : "s"}</span>
-                    </div>
+                      <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
+                        <span className="truncate">{assigneeList.length > 0 ? assigneeList.join(", ") : "No assignees"}</span>
+                        <span className="ml-2 flex-shrink-0">{taskNum} task{taskNum === 1 ? "" : "s"}</span>
+                      </div>
 
-                    <div className="flex items-center justify-between text-xs">
-                      <Badge className="capitalize" variant="outline">
-                        {project.status || "No tasks"}
-                      </Badge>
-                      <span className="text-muted-foreground">
-                        {project.createdAt ? new Date(project.createdAt).toLocaleDateString() : ""}
-                      </span>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
+                      <div className="flex items-center justify-between text-xs">
+                        <Badge className="capitalize" variant="outline">
+                          {project.status || "No tasks"}
+                        </Badge>
+                        <span className="text-muted-foreground">
+                          {project.createdAt ? new Date(project.createdAt).toLocaleDateString() : ""}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Tasks Section */}
+          <div className="bg-card rounded-xl border border-border shadow-card p-4 mb-4">
+            <h2 className="font-semibold text-lg mb-3">Tasks</h2>
+            {tasksQuery.isLoading ? (
+              <p className="text-muted-foreground">Loading tasks...</p>
+            ) : tasksQuery.isError ? (
+              <p className="text-destructive">Failed to load tasks</p>
+            ) : tasks.filter(t => !t.projectId).length === 0 ? (
+              <p className="text-muted-foreground">No standalone tasks found. Create one to begin.</p>
+            ) : (
+              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                {tasks.filter(t => !t.projectId).map((task) => {
+                  const assigneeList = Array.isArray(task.assignees) && task.assignees.length > 0 
+                    ? task.assignees 
+                    : [];
+                  
+                  return (
+                    <button
+                      key={task.id}
+                      onClick={() => {
+                        openView(task);
+                      }}
+                      className="text-left p-3 sm:p-4 rounded-lg border border-border hover:border-primary transition bg-card shadow-sm hover:shadow-card"
+                    >
+                      <div className="mb-2">
+                        <p className="font-medium truncate text-sm">{task.title}</p>
+                        <p className="text-xs text-muted-foreground truncate">{task.description || "No description"}</p>
+                      </div>
+
+                      <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
+                        <span className="truncate">{assigneeList.length > 0 ? assigneeList.join(", ") : "Unassigned"}</span>
+                      </div>
+
+                      <div className="flex items-center justify-between text-xs gap-2 flex-wrap">
+                        <div className="flex gap-1">
+                          <Badge className="capitalize" variant="outline" style={{
+                            backgroundColor: task.priority === 'high' ? 'rgb(239, 68, 68)' : task.priority === 'medium' ? 'rgb(234, 179, 8)' : 'rgb(34, 197, 94)',
+                            color: 'white'
+                          }}>
+                            {task.priority}
+                          </Badge>
+                          <Badge className="capitalize" variant="outline">
+                            {task.status}
+                          </Badge>
+                        </div>
+                        <span className="text-muted-foreground">
+                          {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : "—"}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </>
       )}
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
@@ -1351,11 +1427,18 @@ export default function Tasks() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={isCreateTaskOpen} onOpenChange={setIsCreateTaskOpen}>
+      <Dialog open={isCreateTaskOpen} onOpenChange={(open) => {
+        setIsCreateTaskOpen(open);
+        if (!open) setIsDirectTask(false);
+      }}>
         <DialogContent className="w-[95vw] sm:max-w-[620px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Create Task</DialogTitle>
-            <DialogDescription>Create a new task under the selected project.</DialogDescription>
+            <DialogTitle>{isDirectTask ? "Create Standalone Task" : "Create Task"}</DialogTitle>
+            <DialogDescription>
+              {isDirectTask 
+                ? "Create a new standalone task without a project." 
+                : "Create a new task under the selected project."}
+            </DialogDescription>
           </DialogHeader>
 
           <form
@@ -1412,8 +1495,14 @@ export default function Tasks() {
             </div>
 
             <DialogFooter className="flex-col sm:flex-row gap-2">
-              <Button type="button" variant="outline" onClick={() => setIsCreateTaskOpen(false)} disabled={isCreating} className="w-full sm:w-auto">Cancel</Button>
-              <Button type="submit" disabled={isCreating} className="w-full sm:w-auto gap-2">{isCreating && <Loader2 className="h-4 w-4 animate-spin" />}Create Task</Button>
+              <Button type="button" variant="outline" onClick={() => {
+                setIsCreateTaskOpen(false);
+                setIsDirectTask(false);
+              }} disabled={isCreating} className="w-full sm:w-auto">Cancel</Button>
+              <Button type="submit" disabled={isCreating} className="w-full sm:w-auto gap-2">
+                {isCreating && <Loader2 className="h-4 w-4 animate-spin" />}
+                {isDirectTask ? "Create Task" : "Create Task"}
+              </Button>
             </DialogFooter>
           </form>
         </DialogContent>
