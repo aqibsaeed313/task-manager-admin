@@ -131,6 +131,8 @@ type CreateProjectTaskDraft = {
 type CreateProjectPayload = {
   name: string;
   description: string;
+  assignees?: string[];
+  logo?: ProjectLogo;
   tasks: Array<Omit<CreateProjectTaskDraft, "location">>;
 };
 
@@ -160,6 +162,31 @@ type TaskApiAttachmentFields = {
   attachmentNote?: string;
   attachment?: Task["attachment"];
 };
+
+interface ProjectLogo {
+  fileName?: string;
+  url?: string;
+  mimeType?: string;
+  size?: number;
+}
+
+interface Project {
+  id: string;
+  name: string;
+  description?: string;
+  createdByUsername?: string;
+  createdAt?: string;
+  assignees?: string[];
+  logo?: ProjectLogo;
+  taskCount?: number;
+  status?: string;
+}
+
+interface ProjectWithTasks extends Project {
+  tasks: Task[];
+  taskCount?: number;
+  status?: string;
+}
 
 function normalizeTask(t: TaskApi): Task {
   const legacyAssignee = typeof t.assignee === "string" ? t.assignee.trim() : "";
@@ -220,6 +247,8 @@ export default function Tasks() {
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [projectName, setProjectName] = useState("");
   const [projectDescription, setProjectDescription] = useState("");
+  const [projectLogoFile, setProjectLogoFile] = useState<File | null>(null);
+  const [projectLogoPreview, setProjectLogoPreview] = useState<string>("");
   const [projectTasks, setProjectTasks] = useState<CreateProjectTaskDraft[]>([]);
   const [isEditOpen, setIsEditOpen] = useState(false);
   const [isViewOpen, setIsViewOpen] = useState(false);
@@ -231,6 +260,11 @@ export default function Tasks() {
   const [validationErrors, setValidationErrors] = useState<{ projectName?: string; title?: string; description?: string }>({});
   const [assigneesOpen, setAssigneesOpen] = useState(false);
   const [editAssigneesOpen, setEditAssigneesOpen] = useState(false);
+
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProject, setSelectedProject] = useState<ProjectWithTasks | null>(null);
+  const [isCreateTaskOpen, setIsCreateTaskOpen] = useState(false);
+  const [isLoadingProject, setIsLoadingProject] = useState(false);
   const [selectedAssignees, setSelectedAssignees] = useState<string[]>([]);
   const [editSelectedAssignees, setEditSelectedAssignees] = useState<string[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
@@ -255,11 +289,56 @@ export default function Tasks() {
     },
   });
 
+  // Fetch projects
+  const projectsQuery = useQuery({
+    queryKey: ["projects"],
+    queryFn: async () => {
+      const res = await apiFetch<{ items: Project[] }>("/api/projects");
+      return res.items;
+    },
+  });
+
   useEffect(() => {
     if (tasksQuery.data) {
       setTasks(tasksQuery.data);
     }
   }, [tasksQuery.data]);
+
+  useEffect(() => {
+    if (!selectedProject && tasksQuery.data) {
+      setTasks(tasksQuery.data);
+    }
+  }, [selectedProject, tasksQuery.data]);
+
+  useEffect(() => {
+    if (projectsQuery.data) {
+      setProjects(projectsQuery.data);
+    }
+  }, [projectsQuery.data]);
+
+  const loadProject = async (projectId: string) => {
+    setIsLoadingProject(true);
+    setSelectedProject(null);
+
+    try {
+      const res = await apiFetch<{ item: ProjectWithTasks }>(`/api/projects/${encodeURIComponent(projectId)}`);
+      if (!res.item) {
+        throw new Error("Project not found");
+      }
+
+      const project = res.item;
+      const projectTasks: Task[] = Array.isArray(project.tasks) ? project.tasks : [];
+
+      setSelectedProject({ ...project, tasks: projectTasks });
+      setTasks(projectTasks);
+    } catch (err) {
+      toast({ title: "Failed to load project", description: err instanceof Error ? err.message : "Something went wrong", variant: "destructive" });
+      setSelectedProject(null);
+      setTasks([]);
+    } finally {
+      setIsLoadingProject(false);
+    }
+  };
 
   useEffect(() => {
     const viewId = String(searchParams.get("view") || "").trim();
@@ -366,12 +445,6 @@ export default function Tasks() {
     if (!projectName.trim()) {
       errors.projectName = "Project name is required";
     }
-    if (!formData.title.trim()) {
-      errors.title = "Task title is required";
-    }
-    if (!formData.description.trim()) {
-      errors.description = "Task description is required";
-    }
     setValidationErrors(errors);
     return Object.keys(errors).length === 0;
   };
@@ -380,6 +453,8 @@ export default function Tasks() {
     setProjectName("");
     setProjectDescription("");
     setProjectTasks([]);
+    setProjectLogoFile(null);
+    setProjectLogoPreview("");
     setValidationErrors({});
     setFormData({
       title: "",
@@ -481,25 +556,34 @@ export default function Tasks() {
       setIsCreating(true);
       setApiError(null);
 
+      const description = projectDescription?.trim() || "—";
+
+      const projectLogo = projectLogoFile
+        ? await new Promise<ProjectLogo>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onerror = () => reject(new Error("Failed to read project logo"));
+            reader.onload = () => {
+              const url = typeof reader.result === "string" ? reader.result : "";
+              resolve({
+                fileName: projectLogoFile.name,
+                url,
+                mimeType: projectLogoFile.type,
+                size: projectLogoFile.size,
+              });
+            };
+            reader.readAsDataURL(projectLogoFile);
+          })
+        : undefined;
+
       const tasksToCreate: CreateProjectTaskDraft[] =
         projectTasks.length > 0 ? projectTasks : [draftFromForm(undefined)];
 
-      const payload: CreateProjectPayload = {
+      const payload: CreateProjectPayload & { assignees?: string[]; logo?: ProjectLogo } = {
         name: projectName.trim(),
-        description: projectDescription,
-        tasks: tasksToCreate.map((t) => ({
-          title: t.title,
-          description: t.description,
-          assignees: t.assignees,
-          priority: t.priority,
-          status: t.status,
-          dueDate: t.dueDate,
-          dueTime: t.dueTime,
-          createdAt: t.createdAt,
-          attachmentFileName: t.attachmentFileName,
-          attachmentNote: t.attachmentNote,
-          attachment: t.attachment,
-        })),
+        description,
+        assignees: selectedAssignees,
+        logo: projectLogo,
+        tasks: tasksToCreate,
       };
 
       await apiFetch("/api/projects", {
@@ -508,6 +592,7 @@ export default function Tasks() {
       });
 
       await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      await queryClient.invalidateQueries({ queryKey: ["projects"] });
       setIsCreateOpen(false);
       setIsCreating(false);
       resetProjectFlow();
@@ -520,6 +605,98 @@ export default function Tasks() {
       setApiError(e instanceof Error ? e.message : "Failed to create project");
       toast({
         title: "Failed to create project",
+        description: e instanceof Error ? e.message : "Something went wrong",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleCreateTask = async () => {
+    if (!selectedProject) {
+      toast({ title: "Select a project first", description: "Please choose a project before creating a task.", variant: "destructive" });
+      return;
+    }
+
+    const errors: { title?: string; description?: string } = {};
+    if (!formData.title.trim()) errors.title = "Task title is required";
+    if (!formData.description.trim()) errors.description = "Task description is required";
+
+    if (Object.keys(errors).length > 0) {
+      setValidationErrors((prev) => ({ ...prev, ...errors }));
+      return;
+    }
+
+    try {
+      setIsCreating(true);
+      const nowDate = new Date().toISOString().split("T")[0];
+
+      const attachment = attachmentFile
+        ? await new Promise<CreateProjectTaskDraft["attachment"]>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onerror = () => reject(new Error("Failed to read file"));
+            reader.onload = () => {
+              const url = typeof reader.result === "string" ? reader.result : "";
+              resolve({
+                fileName: attachmentFile.name,
+                url,
+                mimeType: attachmentFile.type,
+                size: attachmentFile.size,
+              });
+            };
+            reader.readAsDataURL(attachmentFile);
+          })
+        : undefined;
+
+      await apiFetch("/api/tasks", {
+        method: "POST",
+        body: JSON.stringify({
+          title: formData.title,
+          description: formData.description,
+          assignees: selectedAssignees,
+          priority: formData.priority,
+          status: formData.status,
+          dueDate: formData.dueDate || nowDate,
+          dueTime: formData.dueTime,
+          location: formData.location,
+          createdAt: nowDate,
+          attachmentFileName: attachmentFile?.name || "",
+          attachmentNote: formData.attachmentNote,
+          attachment,
+          projectId: selectedProject.id,
+        }),
+      });
+
+      await queryClient.invalidateQueries({ queryKey: ["tasks"] });
+      await queryClient.invalidateQueries({ queryKey: ["projects"] });
+      if (selectedProject?.id) {
+        void loadProject(selectedProject.id);
+      }
+
+      setIsCreating(false);
+      setIsCreateTaskOpen(false);
+      setFormData({
+        title: "",
+        description: "",
+        priority: "medium",
+        status: "pending",
+        dueDate: "",
+        dueTime: "",
+        location: "",
+        attachmentFileName: "",
+        attachmentNote: "",
+      });
+      setSelectedAssignees([]);
+      setAttachmentFile(null);
+      setValidationErrors({});
+
+      toast({
+        title: "Task created",
+        description: "New task has been added to the project.",
+      });
+    } catch (e) {
+      setIsCreating(false);
+      toast({
+        title: "Failed to create task",
         description: e instanceof Error ? e.message : "Something went wrong",
         variant: "destructive",
       });
@@ -775,8 +952,10 @@ export default function Tasks() {
     });
   };
 
+  const sourceTasks = selectedProject ? selectedProject.tasks : tasks;
+
   const filteredTasks = useMemo(() => {
-    return tasks.filter((task) => {
+    return sourceTasks.filter((task) => {
       const assigneesText = Array.isArray(task.assignees) ? task.assignees.join(" ") : "";
       const matchesSearch =
         task.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -787,7 +966,7 @@ export default function Tasks() {
         priorityFilter === "all" || task.priority === priorityFilter;
       return matchesSearch && matchesStatus && matchesPriority;
     });
-  }, [tasks, searchQuery, statusFilter, priorityFilter]);
+  }, [sourceTasks, searchQuery, statusFilter, priorityFilter]);
 
   return (
     <div className="space-y-6">
@@ -797,17 +976,147 @@ export default function Tasks() {
           <h1 className="page-title">Task Management</h1>
           <p className="page-subtitle">Create, assign, and track all tasks</p>
         </div>
-        <Button className="gap-2 w-full sm:w-auto" onClick={() => setIsCreateOpen(true)}>
-          <Plus className="w-4 h-4" />
-          Create Project
-        </Button>
+        <div className="flex gap-2">
+          {selectedProject ? (
+            <>
+              <Button variant="outline" onClick={() => setSelectedProject(null)}>
+                Back to Projects
+              </Button>
+              <Button className="gap-2" onClick={() => setIsCreateTaskOpen(true)}>
+                <Plus className="w-4 h-4" />
+                Add Task
+              </Button>
+            </>
+          ) : (
+            <Button className="gap-2" onClick={() => setIsCreateOpen(true)}>
+              <Plus className="w-4 h-4" />
+              Create Project
+            </Button>
+          )}
+        </div>
       </div>
+
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row gap-4 mb-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+          <Input
+            placeholder="Search tasks or assignee..."
+            className="pl-10"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+        <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1 sm:mx-0 sm:px-0 sm:pb-0">
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[140px] sm:w-[140px]">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Status</SelectItem>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="pending">Pending</SelectItem>
+              <SelectItem value="completed">Completed</SelectItem>
+            </SelectContent>
+          </Select>
+          <Select value={priorityFilter} onValueChange={setPriorityFilter}>
+            <SelectTrigger className="w-[140px] sm:w-[140px]">
+              <SelectValue placeholder="Priority" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All Priority</SelectItem>
+              <SelectItem value="high">High</SelectItem>
+              <SelectItem value="medium">Medium</SelectItem>
+              <SelectItem value="low">Low</SelectItem>
+            </SelectContent>
+          </Select>
+          <Button variant="outline" size="icon" className="shrink-0">
+            <Filter className="w-4 h-4" />
+          </Button>
+        </div>
+      </div>
+
+      {selectedProject ? (
+        <div className="bg-card rounded-xl border border-border p-4 mb-4">
+          <div className="flex items-start gap-3">
+            {selectedProject.logo?.url ? (
+              <img src={selectedProject.logo.url} alt={`${selectedProject.name} logo`} className="w-12 h-12 rounded-md object-cover" />
+            ) : (
+              <div className="w-12 h-12 rounded-md bg-muted/40 flex items-center justify-center text-xs text-muted-foreground">Logo</div>
+            )}
+            <div>
+              <h2 className="font-semibold text-lg">Project: {selectedProject.name}</h2>
+              <p className="text-sm text-muted-foreground">{selectedProject.description || "No description"}</p>
+              <p className="text-xs text-muted-foreground mt-1">{selectedProject.assignees && selectedProject.assignees.length > 0 ? selectedProject.assignees.join(", ") : "No assignees"}</p>
+            </div>
+          </div>
+          <div className="flex items-center justify-between text-xs text-muted-foreground mt-3">
+            <span>{selectedProject.tasks.length} tasks</span>
+            <span>{selectedProject.status || "No status"}</span>
+            <span>{selectedProject.createdAt ? new Date(selectedProject.createdAt).toLocaleDateString() : ""}</span>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-card rounded-xl border border-border p-4 mb-4">
+          <h2 className="font-semibold text-lg mb-3">Projects</h2>
+          {projectsQuery.isLoading ? (
+            <p>Loading projects...</p>
+          ) : projectsQuery.isError ? (
+            <p className="text-destructive">Failed to load projects</p>
+          ) : projects.length === 0 ? (
+            <p className="text-muted-foreground">No projects found. Create one to begin.</p>
+          ) : (
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {projects.map((project) => {
+                const assigneeList = Array.isArray(project.assignees) && project.assignees.length > 0 
+                  ? project.assignees 
+                  : [];
+                const taskNum = project.taskCount ?? 0;
+                
+                return (
+                  <button
+                    key={project.id}
+                    onClick={() => void loadProject(project.id)}
+                    className="text-left p-3 rounded-lg border border-muted/50 hover:border-primary transition"
+                  >
+                    <div className="flex items-center gap-2 mb-2">
+                      {project.logo?.url ? (
+                        <img src={project.logo.url} alt={`${project.name} logo`} className="w-10 h-10 rounded-md object-cover" />
+                      ) : (
+                        <div className="w-10 h-10 rounded-md bg-muted/40 flex items-center justify-center text-xs text-muted-foreground">Logo</div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="font-medium truncate">{project.name}</p>
+                        <p className="text-xs text-muted-foreground truncate">{project.description || "No description"}</p>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs text-muted-foreground mb-2">
+                      <span className="truncate">{assigneeList.length > 0 ? assigneeList.join(", ") : "No assignees"}</span>
+                      <span className="ml-2 flex-shrink-0">{taskNum} task{taskNum === 1 ? "" : "s"}</span>
+                    </div>
+
+                    <div className="flex items-center justify-between text-xs">
+                      <Badge className="capitalize" variant="outline">
+                        {project.status || "No tasks"}
+                      </Badge>
+                      <span className="text-muted-foreground">
+                        {project.createdAt ? new Date(project.createdAt).toLocaleDateString() : ""}
+                      </span>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent className="w-[95vw] sm:max-w-[620px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Create Project</DialogTitle>
-            <DialogDescription>Create a project and add multiple tasks.</DialogDescription>
+            <DialogDescription>Create a project and assign it.</DialogDescription>
           </DialogHeader>
 
           <form onSubmit={(e) => { e.preventDefault(); void handleCreateProject(); }} className="space-y-4">
@@ -841,116 +1150,197 @@ export default function Tasks() {
               </div>
 
               <div className="sm:col-span-2 space-y-1.5">
-                <label className="text-sm font-medium">Title *</label>
-                <Input
-                  placeholder="Task title"
-                  value={formData.title}
+                <label className="text-sm font-medium">Project Logo</label>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    className="py-2 px-3 border border-border rounded-md text-sm hover:bg-muted"
+                    onClick={() => {
+                      const el = document.getElementById("project-logo-input") as HTMLInputElement | null;
+                      el?.click();
+                    }}
+                  >
+                    Upload Logo
+                  </button>
+                  {projectLogoPreview ? (
+                    <img src={projectLogoPreview} alt="Project Logo" className="w-10 h-10 rounded-md object-cover" />
+                  ) : (
+                    <div className="w-10 h-10 rounded-md bg-muted/40 flex items-center justify-center text-xs text-muted-foreground">No logo</div>
+                  )}
+                </div>
+                <input
+                  id="project-logo-input"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
                   onChange={(e) => {
-                    setFormData({ ...formData, title: e.target.value });
-                    if (validationErrors.title) setValidationErrors({...validationErrors, title: undefined});
+                    const file = e.target.files?.[0] ?? null;
+                    setProjectLogoFile(file);
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = () => {
+                        setProjectLogoPreview(typeof reader.result === "string" ? reader.result : "");
+                      };
+                      reader.readAsDataURL(file);
+                    } else {
+                      setProjectLogoPreview("");
+                    }
                   }}
-                  className={validationErrors.title ? 'border-destructive ring-1 ring-destructive' : ''}
                 />
-                {validationErrors.title && (
-                  <p className="text-xs text-destructive">{validationErrors.title}</p>
-                )}
               </div>
 
               <div className="sm:col-span-2 space-y-1.5">
-                <label className="text-sm font-medium">Description *</label>
-                <Textarea
-                  placeholder="Short description"
-                  className={`min-h-[90px] ${validationErrors.description ? 'border-destructive ring-1 ring-destructive' : ''}`}
-                  value={formData.description}
-                  onChange={(e) => {
-                    setFormData({ ...formData, description: e.target.value });
-                    if (validationErrors.description) setValidationErrors({...validationErrors, description: undefined});
-                  }}
-                />
-                {validationErrors.description && (
-                  <p className="text-xs text-destructive">{validationErrors.description}</p>
-                )}
+                <label className="text-sm font-medium">Assignees</label>
+                <Popover open={assigneesOpen} onOpenChange={setAssigneesOpen}>
+                  <PopoverTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      className="w-full justify-between h-10"
+                    >
+                      <span className="truncate">
+                        {selectedAssignees.length > 0
+                          ? selectedAssignees.join(", ")
+                          : "Select assignees"}
+                      </span>
+                      <ChevronsUpDown className="h-4 w-4 opacity-50" />
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
+                    <Command>
+                      <CommandInput placeholder="Search employees..." />
+                      <CommandList>
+                        <CommandEmpty>No employee found.</CommandEmpty>
+                        <CommandGroup>
+                          {activeEmployees.map((employee) => (
+                            <CommandItem
+                              key={employee.id}
+                              value={employee.name}
+                              onSelect={() => {
+                                setSelectedAssignees((prev) =>
+                                  prev.includes(employee.name)
+                                    ? prev.filter((name) => name !== employee.name)
+                                    : [...prev, employee.name]
+                                );
+                                setAssigneesOpen(false);
+                              }}
+                            >
+                              <Check
+                                className={cn(
+                                  "mr-2 h-4 w-4",
+                                  selectedAssignees.includes(employee.name)
+                                    ? "opacity-100"
+                                    : "opacity-0"
+                                )}
+                              />
+                              <Avatar className="h-6 w-6 mr-2">
+                                <AvatarFallback className="text-xs bg-primary/10 text-primary">
+                                  {employee.initials}
+                                </AvatarFallback>
+                              </Avatar>
+                              {employee.name}
+                            </CommandItem>
+                          ))}
+                        </CommandGroup>
+                      </CommandList>
+                    </Command>
+                  </PopoverContent>
+                </Popover>
+              
+              
               </div>
 
-              {/* Multi-Assignees */}
+              <div className="sm:col-span-2 space-y-2">
+                <label className="text-sm font-medium">Attachment</label>
+                <div
+                  className="w-full rounded-lg border px-3 py-3 text-sm bg-gradient-to-br from-muted/20 to-muted/5 hover:from-muted/30 hover:to-muted/10 transition-all cursor-pointer"
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.classList.add("border-primary", "bg-primary/5");
+                  }}
+                  onDragLeave={(e) => {
+                    e.currentTarget.classList.remove("border-primary", "bg-primary/5");
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.currentTarget.classList.remove("border-primary", "bg-primary/5");
+                    const f = e.dataTransfer.files?.[0];
+                    if (f) setAttachmentFile(f);
+                  }}
+                  onClick={() => {
+                    const el = document.getElementById("manager-task-attachment-input") as HTMLInputElement | null;
+                    el?.click();
+                  }}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      const el = document.getElementById("manager-task-attachment-input") as HTMLInputElement | null;
+                      el?.click();
+                    }
+                  }}
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">
+                        {attachmentFile ? attachmentFile.name : "Click to choose or drag & drop a file"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">Max 10MB</p>
+                    </div>
+                    <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="flex-col sm:flex-row gap-2">
+                <Button type="button" variant="outline" onClick={() => setIsCreateOpen(false)} className="w-full sm:w-auto">
+                  Cancel
+                </Button>
+                <Button type="submit" className="w-full sm:w-auto">
+                  Create Project
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
+        <Dialog open={isCreateTaskOpen} onOpenChange={setIsCreateTaskOpen}>
+          <DialogContent className="w-[95vw] sm:max-w-[620px] max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Create Task</DialogTitle>
+              <DialogDescription>Create a new task under the selected project.</DialogDescription>
+            </DialogHeader>
+
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void handleCreateTask();
+              }}
+              className="space-y-4"
+            >
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="sm:col-span-2 space-y-1.5">
-                  <label className="text-sm font-medium">Assignees</label>
-                  <Popover open={assigneesOpen} onOpenChange={setAssigneesOpen}>
-                    <PopoverTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="w-full justify-between h-10"
-                      >
-                        <span className="truncate">
-                          {selectedAssignees.length > 0
-                            ? selectedAssignees.join(", ")
-                            : "Select assignees"}
-                        </span>
-                        <ChevronsUpDown className="h-4 w-4 opacity-50" />
-                      </Button>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-[--radix-popover-trigger-width] p-0" align="start">
-                      <Command>
-                        <CommandInput placeholder="Search employees..." />
-                        <CommandList>
-                          <CommandEmpty>No employee found.</CommandEmpty>
-                          <CommandGroup>
-                            {activeEmployees.map((employee) => (
-                              <CommandItem
-                                key={employee.id}
-                                value={employee.name}
-                                onSelect={() => {
-                                  setSelectedAssignees((prev) =>
-                                    prev.includes(employee.name)
-                                      ? prev.filter((name) => name !== employee.name)
-                                      : [...prev, employee.name]
-                                  );
-                                  setAssigneesOpen(false);
-                                }}
-                              >
-                                <Check
-                                  className={cn(
-                                    "mr-2 h-4 w-4",
-                                    selectedAssignees.includes(employee.name)
-                                      ? "opacity-100"
-                                      : "opacity-0"
-                                  )}
-                                />
-                                <Avatar className="h-6 w-6 mr-2">
-                                  <AvatarFallback className="text-xs bg-primary/10 text-primary">
-                                    {employee.initials}
-                                  </AvatarFallback>
-                                </Avatar>
-                                {employee.name}
-                              </CommandItem>
-                            ))}
-                          </CommandGroup>
-                        </CommandList>
-                      </Command>
-                    </PopoverContent>
-                  </Popover>
-                </div>
-
-                {/* Location */}
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Location</label>
+                  <label className="text-sm font-medium">Task Title *</label>
                   <Input
-                    placeholder="e.g. Main Office"
-                    value={formData.location}
-                    onChange={(e) => setFormData({ ...formData, location: e.target.value })}
+                    value={formData.title}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, title: e.target.value }))}
                   />
+                  {validationErrors.title && <p className="text-xs text-destructive">{validationErrors.title}</p>}
                 </div>
-
-                {/* Priority */}
-                <div className="space-y-1.5">
+                <div className="sm:col-span-2 space-y-1.5">
+                  <label className="text-sm font-medium">Task Description *</label>
+                  <Textarea
+                    value={formData.description}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, description: e.target.value }))}
+                  />
+                  {validationErrors.description && <p className="text-xs text-destructive">{validationErrors.description}</p>}
+                </div>
+                <div className="sm:col-span-1 space-y-1.5">
                   <label className="text-sm font-medium">Priority</label>
-                  <Select
-                    value={formData.priority}
-                    onValueChange={(v) => setFormData({ ...formData, priority: v as Task["priority"] })}
-                  >
+                  <Select value={formData.priority} onValueChange={(value) => setFormData((prev) => ({ ...prev, priority: value as Task['priority'] }))}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Select priority" />
+                      <SelectValue placeholder="Priority" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="high">High</SelectItem>
@@ -959,16 +1349,11 @@ export default function Tasks() {
                     </SelectContent>
                   </Select>
                 </div>
-
-                {/* Status */}
-                <div className="space-y-1.5">
+                <div className="sm:col-span-1 space-y-1.5">
                   <label className="text-sm font-medium">Status</label>
-                  <Select
-                    value={formData.status}
-                    onValueChange={(v) => setFormData({ ...formData, status: v as Task["status"] })}
-                  >
+                  <Select value={formData.status} onValueChange={(value) => setFormData((prev) => ({ ...prev, status: value as Task['status'] }))}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Select status" />
+                      <SelectValue placeholder="Status" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="pending">Pending</SelectItem>
@@ -978,175 +1363,22 @@ export default function Tasks() {
                     </SelectContent>
                   </Select>
                 </div>
-
-                {/* Created */}
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Created</label>
-                  <Input
-                    type="date"
-                    value={formData.dueDate}
-                    disabled
-                    className="bg-muted/50 cursor-not-allowed"
-                  />
-                </div>
-
-                {/* Due Time */}
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Due Time</label>
-                  <Input
-                    type="time"
-                    value={formData.dueTime}
-                    onChange={(e) => setFormData({ ...formData, dueTime: e.target.value })}
-                  />
-                </div>
-
-                {/* Attachment */}
-                <div className="sm:col-span-2 space-y-2">
-                  <label className="text-sm font-medium">Attachment</label>
-                  <div
-                    className="w-full rounded-lg border px-3 py-3 text-sm bg-gradient-to-br from-muted/20 to-muted/5 hover:from-muted/30 hover:to-muted/10 transition-all cursor-pointer"
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      e.currentTarget.classList.add("border-primary", "bg-primary/5");
-                    }}
-                    onDragLeave={(e) => {
-                      e.currentTarget.classList.remove("border-primary", "bg-primary/5");
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      e.currentTarget.classList.remove("border-primary", "bg-primary/5");
-                      const f = e.dataTransfer.files?.[0];
-                      if (f) {
-                        setAttachmentFile(f);
-                      }
-                    }}
-                    onClick={() => {
-                      const el = document.getElementById("manager-task-attachment-input") as HTMLInputElement | null;
-                      el?.click();
-                    }}
-                    role="button"
-                    tabIndex={0}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter" || e.key === " ") {
-                        const el = document.getElementById("manager-task-attachment-input") as HTMLInputElement | null;
-                        el?.click();
-                      }
-                    }}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium truncate">
-                          {attachmentFile ? attachmentFile.name : "Click to choose or drag & drop a file"}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          Max 10MB
-                        </p>
-                      </div>
-                      <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
-                    </div>
-                    <input
-                      id="manager-task-attachment-input"
-                      type="file"
-                      className="hidden"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0] || null;
-                        setAttachmentFile(f);
-                      }}
-                    />
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-sm font-medium">Attachment Note</label>
-                    <Input
-                      value={attachmentNoteDraft}
-                      onChange={(e) => {
-                        setAttachmentNoteDraft(e.target.value);
-                        setFormData((prev) => ({ ...prev, attachmentNote: e.target.value }));
-                      }}
-                      placeholder="e.g., before/after photo"
-                    />
-                  </div>
-                </div>
               </div>
 
-              <div className="sm:col-span-2 flex flex-col sm:flex-row gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => {
-                    void addTaskToProject();
-                  }}
-                  className="w-full"
-                >
-                  Add Task
-                </Button>
-                <Button
-                  type="submit"
-                  className="w-full"
-                  disabled={isCreating}
-                >
-                  {isCreating ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Creating
-                    </>
-                  ) : (
-                    "Create Project"
-                  )}
-                </Button>
-              </div>
-
-              {projectTasks.length > 0 && (
-                <div className="sm:col-span-2 space-y-2">
-                  <div className="text-sm font-medium">Tasks in Project</div>
-                  <div className="space-y-2">
-                    {projectTasks.map((t, idx) => (
-                      <div
-                        key={`${t.title}-${idx}`}
-                        className="border rounded-md p-3 flex items-start justify-between gap-3"
-                      >
-                        <div className="min-w-0">
-                          <div className="font-medium truncate">{t.title}</div>
-                          <div className="text-xs text-muted-foreground truncate">
-                            {t.assignees?.join(", ") || "No assignees"}
-                          </div>
-                        </div>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setProjectTasks((prev) => prev.filter((_, i) => i !== idx))}
-                        >
-                          Remove
-                        </Button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-            )}
-        </form>
-            
-            
+              <DialogFooter className="flex-col sm:flex-row gap-2">
+                <Button type="button" variant="outline" onClick={() => setIsCreateTaskOpen(false)} className="w-full sm:w-auto">Cancel</Button>
+                <Button type="submit" className="w-full sm:w-auto">Create Task</Button>
+              </DialogFooter>
+            </form>
           </DialogContent>
-          </Dialog>
+        </Dialog>
 
-      <Dialog
-        open={isViewOpen}
-        onOpenChange={(open) => {
-          setIsViewOpen(open);
-          if (!open) {
-            setSelectedTask(null);
-            setComments([]);
-            setCommentDraft("");
-            setCommentError(null);
-          }
-        }}
-      >
-        <DialogContent className="w-[95vw] sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>Task Details</DialogTitle>
-            <DialogDescription>View task information.</DialogDescription>
-          </DialogHeader>
+        <Dialog open={isViewOpen} onOpenChange={setIsViewOpen}>
+          <DialogContent className="w-[95vw] sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Task Details</DialogTitle>
+              <DialogDescription>View task information.</DialogDescription>
+            </DialogHeader>
 
           {selectedTask && (
             <div className="space-y-4">
@@ -1659,216 +1891,170 @@ export default function Tasks() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-          <Input
-            placeholder="Search tasks or assignee..."
-            className="pl-10"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
-        </div>
-        <div className="flex gap-3 overflow-x-auto pb-1 -mx-1 px-1 sm:mx-0 sm:px-0 sm:pb-0">
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[140px] sm:w-[140px]">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Status</SelectItem>
-              <SelectItem value="active">Active</SelectItem>
-              <SelectItem value="pending">Pending</SelectItem>
-              <SelectItem value="completed">Completed</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={priorityFilter} onValueChange={setPriorityFilter}>
-            <SelectTrigger className="w-[140px] sm:w-[140px]">
-              <SelectValue placeholder="Priority" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Priority</SelectItem>
-              <SelectItem value="high">High</SelectItem>
-              <SelectItem value="medium">Medium</SelectItem>
-              <SelectItem value="low">Low</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button variant="outline" size="icon" className="shrink-0">
-            <Filter className="w-4 h-4" />
-          </Button>
-        </div>
-      </div>
-
-      {/* Task Table */}
-      <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden">
-        {tasksQuery.isLoading ? (
-          <div className="p-6 text-sm text-muted-foreground">Loading tasks...</div>
-        ) : tasksQuery.isError ? (
-          <div className="p-6 text-sm text-destructive">
-            {tasksQuery.error instanceof Error
-              ? tasksQuery.error.message
-              : "Failed to load tasks"}
-          </div>
-        ) : null}
-        <div className="overflow-x-auto">
-          <table className="data-table w-full min-w-[980px]">
-            <thead>
-              <tr>
-                <th>Task</th>
-                <th>Assignees</th>
-                <th>Priority</th>
-                <th>Status</th>
-                <th>Created</th>
-                <th>Location</th>
-                <th>Print</th>
-                <th className="w-12"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {filteredTasks.map((task, index) => (
-                <tr
-                  key={task.id}
-                  className="animate-fade-in cursor-pointer hover:bg-muted/50 transition-colors"
-                  style={{ animationDelay: `${index * 30}ms` }}
-                  onClick={() => openView(task)}
-                >
-                  <td>
-                    <div>
-                      <p className="font-medium text-foreground">{task.title}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5 line-clamp-1">
-                        {task.description}
-                      </p>
+      {/* Task Cards Grid (only visible after project selected) */}
+      {selectedProject && (
+        <div className="space-y-6">
+          {tasksQuery.isLoading ? (
+            <div className="bg-card rounded-xl border border-border p-6 text-sm text-muted-foreground">
+              Loading tasks...
+            </div>
+          ) : tasksQuery.isError ? (
+            <div className="bg-card rounded-xl border border-border p-6 text-sm text-destructive">
+              {tasksQuery.error instanceof Error
+                ? tasksQuery.error.message
+                : "Failed to load tasks"}
+            </div>
+          ) : filteredTasks.length === 0 ? (
+            <div className="bg-card rounded-xl border border-border p-6 text-sm text-muted-foreground text-center">
+              No tasks found
+            </div>
+          ) : (
+            <>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                {filteredTasks.map((task, index) => (
+                  <motion.div
+                    key={task.id}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.05 }}
+                    className="bg-card rounded-xl border border-muted/50 hover:border-primary/50 transition-all hover:shadow-md overflow-hidden flex flex-col group cursor-pointer"
+                    onClick={() => openView(task)}
+                  >
+                    {/* Card Header with Title and Menu */}
+                    <div className="p-4 border-b border-muted/30 flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-semibold text-foreground line-clamp-1">{task.title}</p>
+                        <p className="text-xs text-muted-foreground mt-1 capitalize">{task.priority} priority</p>
+                      </div>
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <button
+                            className="p-1 rounded-lg hover:bg-muted transition-colors opacity-0 group-hover:opacity-100"
+                            aria-label="Task actions"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
+                          </button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openView(task); }}>
+                            View Details
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); void handlePrintTask(task); }}>
+                            Print
+                          </DropdownMenuItem>
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openEdit(task); }}>
+                            Edit
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem onClick={(e) => { e.stopPropagation(); openDelete(task); }}>
+                            Delete
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
                     </div>
-                  </td>
-                  <td>
-                    <div className="flex items-center gap-2 whitespace-nowrap">
-                      {task.assignees && task.assignees.length > 0 ? (
-                        <div className="flex -space-x-2">
-                          {task.assignees.slice(0, 3).map((assignee, idx) => (
-                            <Avatar key={idx} className="w-7 h-7 border-2 border-background">
-                              <AvatarFallback className="text-xs bg-primary/10 text-primary">
-                                {assignee
-                                  .split(" ")
-                                  .map((n) => n[0])
-                                  .join("")
-                                  .toUpperCase()}
-                              </AvatarFallback>
-                            </Avatar>
-                          ))}
-                          {task.assignees.length > 3 && (
-                            <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-xs font-medium border-2 border-background">
-                              +{task.assignees.length - 3}
-                            </div>
+
+                    {/* Card Body */}
+                    <div className="p-4 flex-1 space-y-3">
+                      {/* Description */}
+                      <p className="text-sm text-muted-foreground line-clamp-2">{task.description}</p>
+
+                      {/* Assignees */}
+                      <div>
+                        <p className="text-xs text-muted-foreground mb-2">Assigned to</p>
+                        <div className="flex items-center gap-2">
+                          {task.assignees && task.assignees.length > 0 ? (
+                            <>
+                              <div className="flex -space-x-2">
+                                {task.assignees.slice(0, 3).map((assignee, idx) => (
+                                  <Avatar key={idx} className="w-7 h-7 border-2 border-background">
+                                    <AvatarFallback className="text-xs bg-primary/10 text-primary font-semibold">
+                                      {assignee
+                                        .split(" ")
+                                        .map((n) => n[0])
+                                        .join("")
+                                        .toUpperCase()}
+                                    </AvatarFallback>
+                                  </Avatar>
+                                ))}
+                                {task.assignees.length > 3 && (
+                                  <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-xs font-medium border-2 border-background">
+                                    +{task.assignees.length - 3}
+                                  </div>
+                                )}
+                              </div>
+                              <span className="text-sm text-foreground">
+                                {task.assignees.slice(0, 2).join(", ")} {task.assignees.length > 2 ? `+${task.assignees.length - 2}` : ""}
+                              </span>
+                            </>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">Unassigned</span>
                           )}
                         </div>
-                      ) : (
-                        <div className="w-7 h-7 rounded-full bg-muted flex items-center justify-center text-xs font-medium">
-                          ?
+                      </div>
+
+                      {/* Status & Priority Badges */}
+                      <div className="flex gap-2 flex-wrap">
+                        <Badge
+                          variant="secondary"
+                          className={cn("text-xs", statusClasses[task.status])}
+                        >
+                          {task.status}
+                        </Badge>
+                        <Badge
+                          variant="outline"
+                          className={cn("text-xs border", priorityClasses[task.priority])}
+                        >
+                          {task.priority}
+                        </Badge>
+                      </div>
+                    </div>
+
+                    {/* Card Footer with Dates and Location */}
+                    <div className="p-4 border-t border-muted/30 bg-muted/10 space-y-2 text-sm">
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Calendar className="w-3.5 h-3.5" />
+                        <span className="text-xs">Due: {task.dueDate ? new Date(task.dueDate).toLocaleDateString() : "—"}</span>
+                      </div>
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Clock className="w-3.5 h-3.5" />
+                        <span className="text-xs">Created: {new Date(task.createdAt).toLocaleDateString()}</span>
+                      </div>
+                      {task.location && (
+                        <div className="flex items-center gap-2 text-muted-foreground">
+                          <MapPin className="w-3.5 h-3.5" />
+                          <span className="text-xs">{task.location}</span>
                         </div>
                       )}
-                      <span className="text-foreground text-sm">
-                        {task.assignees && task.assignees.length > 0
-                          ? task.assignees.slice(0, 2).join(", ") + (task.assignees.length > 2 ? ` +${task.assignees.length - 2} more` : "")
-                          : "Unassigned"}
-                      </span>
                     </div>
-                  </td>
-                  <td>
-                    <Badge
-                      variant="outline"
-                      className={cn("text-xs border whitespace-nowrap", priorityClasses[task.priority])}
-                    >
-                      {task.priority}
-                    </Badge>
-                  </td>
-                  <td>
-                    <Badge
-                      variant="secondary"
-                      className={cn("text-xs whitespace-nowrap", statusClasses[task.status])}
-                    >
-                      {task.status}
-                    </Badge>
-                  </td>
-                  <td>
-                    <div className="flex items-center gap-1.5 text-muted-foreground whitespace-nowrap">
-                      <Calendar className="w-3.5 h-3.5" />
-                      <span>{new Date(task.createdAt).toLocaleDateString()}</span>
-                    </div>
-                  </td>
-                  <td>
-                    <div className="flex items-center gap-1.5 text-muted-foreground whitespace-nowrap">
-                      <MapPin className="w-3.5 h-3.5" />
-                      <span>{task.location}</span>
-                    </div>
-                  </td>
-                  <td>
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      className="gap-2 whitespace-nowrap"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        void handlePrintTask(task);
-                      }}
-                    >
-                      <Printer className="w-4 h-4" />
-                      Print
-                    </Button>
-                  </td>
-                  <td>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <button
-                          className="p-1.5 rounded-lg hover:bg-muted transition-colors"
-                          aria-label="Task actions"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <MoreHorizontal className="w-4 h-4 text-muted-foreground" />
-                        </button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => openView(task)}>
-                          View Details
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => void handlePrintTask(task)}>
-                          Print
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => openEdit(task)}>
-                          Edit
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem onClick={() => openDelete(task)}>
-                          Delete
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                  </motion.div>
+                ))}
+              </div>
 
-      {/* Stats Footer */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm text-muted-foreground">
-        <span className="text-center sm:text-left">Showing {filteredTasks.length} of {tasks.length} tasks</span>
-        <div className="flex items-center justify-center sm:justify-end gap-4 overflow-x-auto pb-1 sm:pb-0">
-          <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-success" />
-            {tasks.filter((t) => t.status === "completed").length} completed
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-primary" />
-            {tasks.filter((t) => t.status === "in-progress").length} in progress
-          </span>
-          <span className="flex items-center gap-1.5">
-            <span className="w-2 h-2 rounded-full bg-warning" />
-            {tasks.filter((t) => t.status === "pending").length} pending
-          </span>
+              {/* Stats Footer */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-sm text-muted-foreground mt-6 pt-4 border-t border-muted/20">
+                <span className="text-center sm:text-left">Showing {filteredTasks.length} of {tasks.length} tasks</span>
+                <div className="flex items-center justify-center sm:justify-end gap-4 overflow-x-auto pb-1 sm:pb-0">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-success" />
+                    {tasks.filter((t) => t.status === "completed").length} completed
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-primary" />
+                    {tasks.filter((t) => t.status === "in-progress").length} in progress
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-warning" />
+                    {tasks.filter((t) => t.status === "pending").length} pending
+                  </span>
+                </div>
+              </div>
+            </>
+          )}
         </div>
-      </div>
+      )}
     </div>
   );
 }
+
+            
