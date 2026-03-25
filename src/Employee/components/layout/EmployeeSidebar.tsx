@@ -8,8 +8,8 @@ import { employeeApiFetch } from "@/Employee/lib/api";
 const navItemsBase = [
   { icon: LayoutDashboard, label: "Dashboard", path: "/employee", end: true },
   { icon: ClipboardList, label: "My Tasks", path: "/employee/tasks" },
-  { icon: Calendar, label: "Schedule", path: "/employee/schedule" },
-  { icon: Clock, label: "Clocked", path: "/employee/clocked" },
+  { icon: Calendar, label: "Events", path: "/employee/schedule" },
+  { icon: Clock, label: "Time Tracking", path: "/employee/clocked" },
   { icon: MessageCircle, label: "Messages", path: "/employee/messages" },
   { icon: UserCircle, label: "Profile", path: "/employee/profile" },
   { icon: Bell, label: "Notifications", path: "/employee/notifications" },

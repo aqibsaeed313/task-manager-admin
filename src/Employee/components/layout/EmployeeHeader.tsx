@@ -14,6 +14,8 @@ import { useNavigate } from "react-router-dom";
 import { getEmployeeAuth, clearEmployeeAuth } from "@/Employee/lib/auth";
 import { useEffect, useMemo, useState } from "react";
 import { getEmployeeProfile } from "@/Employee/lib/api";
+import { useQuery } from "@tanstack/react-query";
+import { apiFetch } from "@/lib/manger/api";
 
 interface EmployeeHeaderProps {
   onMenuClick?: () => void;
@@ -44,6 +46,24 @@ export function EmployeeHeader({ onMenuClick }: EmployeeHeaderProps) {
     loadProfile();
   }, []);
 
+  // Header settings from admin panel
+  const headerSettingsQuery = useQuery({
+    queryKey: ["header-settings"],
+    queryFn: async () => {
+      return apiFetch<{ item: {
+        backgroundType: 'color' | 'image';
+        colorConfig?: { from: string; via: string; to: string };
+        imageConfig?: { dataUrl: string; size: string; position: string };
+        overlay?: { enabled: boolean; color: string };
+        height: number;
+      } }>("/api/header-settings");
+    },
+  });
+
+  const headerSettings = headerSettingsQuery.data?.item;
+  const headerHeight = headerSettings?.height || 144;
+  const hasImageBackground = headerSettings?.backgroundType === 'image' && headerSettings.imageConfig?.dataUrl;
+
   const fullName = (profile?.name || auth?.name || auth?.username || "Employee").trim();
   const initials =
     fullName
@@ -67,15 +87,50 @@ export function EmployeeHeader({ onMenuClick }: EmployeeHeaderProps) {
   }, []);
 
   return (
-    <header className="fixed top-0 left-0 right-0 md:left-20 z-30 shadow-floating">
-      <div className="w-full bg-gradient-to-r from-[#133767] via-[#133767] to-[#133767]">
-        <div className="hidden md:block fixed top-0 left-0 h-36 w-20 bg-gradient-to-r from-[#133767] via-[#133767] to-[#133767]" />
-        <div className="relative flex h-20 sm:h-24 md:h-36 items-center justify-between px-3 sm:px-6 lg:px-10 py-2 md:py-4 animate-fade-in">
+    <header 
+      className="fixed top-0 left-0 right-0 z-30 shadow-floating overflow-hidden"
+      style={{ height: `${headerHeight}px` }}
+    >
+      <div 
+        className="w-full h-full relative"
+        style={{
+          background: hasImageBackground 
+            ? 'transparent'
+            : `linear-gradient(to right, ${headerSettings?.colorConfig?.from || '#133767'}, ${headerSettings?.colorConfig?.via || '#133767'}, ${headerSettings?.colorConfig?.to || '#133767'})`
+        }}
+      >
+        {/* Background Image - Full Width */}
+        {hasImageBackground && (
+          <>
+            <img
+              src={headerSettings?.imageConfig?.dataUrl}
+              alt="header background"
+              className="absolute inset-0 w-full h-full object-cover"
+              style={{ 
+                objectPosition: headerSettings?.imageConfig?.position || 'center',
+                objectFit: headerSettings?.imageConfig?.size === 'contain' ? 'contain' : 'cover'
+              }}
+            />
+            {/* Overlay */}
+            {headerSettings?.overlay?.enabled && (
+              <div 
+                className="absolute inset-0"
+                style={{ backgroundColor: headerSettings.overlay.color || 'rgba(0,0,0,0.3)' }}
+              />
+            )}
+          </>
+        )}
+
+        {/* Content - with left padding for sidebar on desktop */}
+        <div 
+          className="relative flex items-center justify-between px-3 sm:px-6 lg:px-10 py-2 md:py-4 animate-fade-in h-full md:pl-24"
+        >
           <div className="flex items-center z-10">
             <img
               src="/seven logo.png"
               alt="SE7EN Inc. logo"
               className="h-14 sm:h-16 md:h-36 w-auto max-w-[180px] sm:max-w-[200px] md:max-w-[300px] object-contain drop-shadow-[0_4px_8px_rgba(0,0,0,0.4)]"
+              style={{ height: `${headerHeight * 0.75}px`, maxHeight: '140px' }}
             />
           </div>
 
@@ -86,6 +141,7 @@ export function EmployeeHeader({ onMenuClick }: EmployeeHeaderProps) {
                 src="/clock2.png"
                 alt="TaskManager by Reardon"
                 className="h-12 sm:h-16 md:h-32 lg:h-40 w-auto max-w-[140px] sm:max-w-[190px] md:max-w-[280px] lg:max-w-[380px] object-contain mix-blend-screen opacity-95 [mask-image:radial-gradient(closest-side,black_79%,transparent_100%)]"
+                style={{ height: `${headerHeight * 0.7}px`, maxHeight: '120px' }}
               />
             </div>
           </div>
