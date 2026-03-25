@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/admin/ui/
 import { Button } from "@/components/admin/ui/button";
 import { Input } from "@/components/admin/ui/input";
 import { Badge } from "@/components/admin/ui/badge";
-import { Camera, User, Loader2, CheckCircle, XCircle, AlertCircle, Upload, FileImage } from "lucide-react";
+import { Camera, User, Loader2, CheckCircle, XCircle, AlertCircle, Upload, FileImage, Image } from "lucide-react";
 import { apiFetch } from "@/lib/admin/apiClient";
 import { useQuery } from "@tanstack/react-query";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -389,7 +389,306 @@ export default function Settings() {
     } finally {
       setPasswordSaving(false);
     }
-  };
+  }; // Added closing brace here
+
+  // Header Customization Card Component
+  function HeaderCustomizationCard() {
+    const [headerSettings, setHeaderSettings] = useState({
+      backgroundType: "color" as "color" | "image",
+      colorConfig: { from: "#133767", via: "#133767", to: "#133767" },
+      imageConfig: { url: "", dataUrl: "", repeat: "no-repeat", size: "cover", position: "center" },
+      height: 144,
+      overlay: { enabled: true, color: "rgba(0,0,0,0.3)" },
+    });
+    const [isLoading, setIsLoading] = useState(false);
+    const [isSavingHeader, setIsSavingHeader] = useState(false);
+    const [message, setMessage] = useState<string | null>(null);
+    const headerFileInputRef = useRef<HTMLInputElement>(null);
+
+    useEffect(() => {
+      const fetchSettings = async () => {
+        setIsLoading(true);
+        try {
+          const res = await apiFetch<{ item: typeof headerSettings }>("/api/header-settings");
+          if (res.item) {
+            setHeaderSettings(res.item);
+          }
+        } catch (e) {
+          console.error("Failed to load header settings", e);
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      fetchSettings();
+    }, []);
+
+    const handleSaveHeader = async () => {
+      setIsSavingHeader(true);
+      setMessage(null);
+      try {
+        await apiFetch("/api/header-settings", {
+          method: "PUT",
+          body: JSON.stringify(headerSettings),
+        });
+        setMessage("Header settings saved successfully!");
+        window.dispatchEvent(new CustomEvent("header-settings-updated"));
+      } catch (e) {
+        setMessage("Failed to save header settings");
+      } finally {
+        setIsSavingHeader(false);
+        setTimeout(() => setMessage(null), 3000);
+      }
+    };
+
+    const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      if (file.size > 2 * 1024 * 1024) {
+        setMessage("Image must be less than 2MB");
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUrl = reader.result as string;
+        setHeaderSettings(prev => ({
+          ...prev,
+          backgroundType: "image",
+          imageConfig: { ...prev.imageConfig, dataUrl }
+        }));
+      };
+      reader.readAsDataURL(file);
+    };
+
+    const handleRemoveImage = () => {
+      setHeaderSettings(prev => ({
+        ...prev,
+        backgroundType: "color",
+        imageConfig: { ...prev.imageConfig, dataUrl: "" }
+      }));
+    };
+
+    const handleReset = async () => {
+      setIsSavingHeader(true);
+      try {
+        await apiFetch("/api/header-settings/reset", { method: "POST" });
+        setHeaderSettings({
+          backgroundType: "color",
+          colorConfig: { from: "#133767", via: "#133767", to: "#133767" },
+          imageConfig: { url: "", dataUrl: "", repeat: "no-repeat", size: "cover", position: "center" },
+          height: 144,
+          overlay: { enabled: true, color: "rgba(0,0,0,0.3)" },
+        });
+        setMessage("Reset to defaults - color gradient restored");
+        window.dispatchEvent(new CustomEvent("header-settings-updated"));
+      } catch (e) {
+        setMessage("Failed to reset");
+      } finally {
+        setIsSavingHeader(false);
+        setTimeout(() => setMessage(null), 3000);
+      }
+    };
+
+    return (
+      <Card className="shadow-soft border-0 sm:border">
+        <CardHeader className="px-4 sm:px-6 py-4 sm:py-5">
+          <CardTitle className="text-base sm:text-lg md:text-xl font-semibold flex items-center gap-2">
+            <Image className="h-5 w-5" />
+            Customize Header
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4 sm:space-y-5 px-4 sm:px-6 pb-5 sm:pb-6 pt-0">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+          ) : (
+            <>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <label className="block text-sm font-medium">Header Background Image</label>
+                  <div className="flex items-center gap-3">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => headerFileInputRef.current?.click()}
+                      className="h-9 text-sm"
+                    >
+                      <Upload className="h-4 w-4 mr-2" />
+                      {headerSettings.imageConfig.dataUrl ? "Change Image" : "Upload Image"}
+                    </Button>
+                    <input
+                      ref={headerFileInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={handleImageUpload}
+                    />
+                    {headerSettings.imageConfig.dataUrl && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleRemoveImage}
+                        className="text-destructive h-9"
+                      >
+                        Remove Image
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-xs text-muted-foreground">Max size: 2MB. Recommended: 1920x400px. Image will cover the entire header.</p>
+                </div>
+
+                {headerSettings.imageConfig.dataUrl && (
+                  <div className="relative h-32 rounded-lg overflow-hidden border">
+                    <img
+                      src={headerSettings.imageConfig.dataUrl}
+                      alt="Header preview"
+                      className="w-full h-full object-cover"
+                    />
+                  </div>
+                )}
+
+                {!headerSettings.imageConfig.dataUrl && (
+                  <div className="rounded-lg border border-dashed border-muted-foreground/30 p-8 text-center">
+                    <Image className="h-8 w-8 mx-auto mb-2 text-muted-foreground/50" />
+                    <p className="text-sm text-muted-foreground">No image uploaded</p>
+                    <p className="text-xs text-muted-foreground mt-1">Default color gradient will be used</p>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Size</label>
+                    <select
+                      value={headerSettings.imageConfig.size}
+                      onChange={(e) => setHeaderSettings(prev => ({
+                        ...prev,
+                        imageConfig: { ...prev.imageConfig, size: e.target.value }
+                      }))}
+                      className="w-full h-9 rounded-md border px-2 text-sm"
+                      disabled={!headerSettings.imageConfig.dataUrl}
+                    >
+                      <option value="cover">Cover</option>
+                      <option value="contain">Contain</option>
+                      <option value="auto">Auto</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs text-muted-foreground">Position</label>
+                    <select
+                      value={headerSettings.imageConfig.position}
+                      onChange={(e) => setHeaderSettings(prev => ({
+                        ...prev,
+                        imageConfig: { ...prev.imageConfig, position: e.target.value }
+                      }))}
+                      className="w-full h-9 rounded-md border px-2 text-sm"
+                      disabled={!headerSettings.imageConfig.dataUrl}
+                    >
+                      <option value="center">Center</option>
+                      <option value="top">Top</option>
+                      <option value="bottom">Bottom</option>
+                      <option value="left">Left</option>
+                      <option value="right">Right</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={headerSettings.overlay.enabled}
+                      onChange={(e) => setHeaderSettings(prev => ({
+                        ...prev,
+                        overlay: { ...prev.overlay, enabled: e.target.checked }
+                      }))}
+                      className="h-4 w-4"
+                      disabled={!headerSettings.imageConfig.dataUrl}
+                    />
+                    <span className="text-sm">Enable dark overlay for better text visibility</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">Header Height</label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="range"
+                    min={80}
+                    max={300}
+                    value={headerSettings.height}
+                    onChange={(e) => setHeaderSettings(prev => ({ ...prev, height: parseInt(e.target.value) }))}
+                    className="flex-1"
+                  />
+                  <span className="text-sm w-16 text-right">{headerSettings.height}px</span>
+                </div>
+                <p className="text-xs text-muted-foreground">Range: 80px - 300px (default: 144px)</p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-sm font-medium">Preview</label>
+                <div
+                  className="w-full rounded-lg overflow-hidden border relative"
+                  style={{
+                    height: `${Math.min(headerSettings.height, 120)}px`,
+                    background: headerSettings.imageConfig.dataUrl
+                      ? `url(${headerSettings.imageConfig.dataUrl})`
+                      : `linear-gradient(to right, ${headerSettings.colorConfig.from}, ${headerSettings.colorConfig.via}, ${headerSettings.colorConfig.to})`,
+                    backgroundSize: headerSettings.imageConfig.size,
+                    backgroundPosition: headerSettings.imageConfig.position,
+                    backgroundRepeat: headerSettings.imageConfig.repeat,
+                  }}
+                >
+                  {headerSettings.imageConfig.dataUrl && headerSettings.overlay.enabled && (
+                    <div className="absolute inset-0" style={{ backgroundColor: headerSettings.overlay.color }} />
+                  )}
+                  <div className="absolute inset-0 flex items-center justify-center text-white font-medium">
+                    Header Preview
+                  </div>
+                </div>
+              </div>
+
+              {message && (
+                <div className={`rounded-lg p-3 flex items-center gap-2 text-sm ${
+                  message.includes("success") || message.includes("saved") || message.includes("Reset")
+                    ? "bg-green-50 text-green-700 border border-green-200"
+                    : "bg-red-50 text-red-700 border border-red-200"
+                }`}>
+                  {message.includes("success") || message.includes("saved") || message.includes("Reset") ? (
+                    <CheckCircle className="h-4 w-4 flex-shrink-0" />
+                  ) : (
+                    <AlertCircle className="h-4 w-4 flex-shrink-0" />
+                  )}
+                  <span>{message}</span>
+                </div>
+              )}
+
+              <div className="flex justify-end gap-3 pt-2">
+                <Button
+                  variant="outline"
+                  onClick={handleReset}
+                  disabled={isSavingHeader}
+                  className="h-9 text-sm"
+                >
+                  Reset to Default
+                </Button>
+                <Button
+                  onClick={handleSaveHeader}
+                  disabled={isSavingHeader}
+                  className="h-9 text-sm min-w-[100px]"
+                >
+                  {isSavingHeader ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save Changes"}
+                </Button>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
 
   return (
     <>
@@ -583,6 +882,9 @@ export default function Settings() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Header Customization Card */}
+          <HeaderCustomizationCard />
 
           {/* Security Card */}
           <Card className="shadow-soft border-0 sm:border">

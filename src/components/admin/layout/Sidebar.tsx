@@ -100,13 +100,13 @@ export function Sidebar({ mode = "desktop", onNavigate }: SidebarProps) {
   return (
     <aside
       className={cn(
-        "flex flex-col text-white",
+        "flex flex-col text-white z-40 bg-gradient-to-b from-[#0b2f6b] via-[#10428b] to-[#0a2a5c] h-full",
         isMobile
-          ? "h-full w-64 bg-gradient-to-b from-[#0b2f6b] via-[#10428b] to-[#0a2a5c]"
-          : "fixed left-0 top-36 bottom-0 w-56 bg-gradient-to-b from-[#0b2f6b] via-[#10428b] to-[#0a2a5c] shadow-floating animate-slide-in border-r-2 border-white/20"
+          ? "w-64"
+          : "w-56 shadow-floating animate-slide-in"
       )}
     >
-      <nav className="flex-1 flex flex-col gap-1 px-2 py-4 overflow-y-auto overflow-x-hidden no-scrollbar mt-4">
+      <nav className="flex-1 flex flex-col gap-1 px-2 py-4 overflow-y-auto overflow-x-hidden no-scrollbar">
         {navItems.map((item) => (
           <NavLink
             key={item.path}

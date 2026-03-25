@@ -23,7 +23,28 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch } from "@/lib/admin/apiClient";
 import { getAuthState, clearAuthState } from "@/lib/auth";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+
+interface HeaderSettings {
+  backgroundType: "color" | "image";
+  colorConfig: {
+    from: string;
+    via: string;
+    to: string;
+  };
+  imageConfig: {
+    url: string;
+    dataUrl: string;
+    repeat: string;
+    size: string;
+    position: string;
+  };
+  height: number;
+  overlay: {
+    enabled: boolean;
+    color: string;
+  };
+}
 
 interface HeaderProps {
   onMenuClick?: () => void;
@@ -119,6 +140,57 @@ export function Header({ onMenuClick }: HeaderProps) {
 
     return "/admin/notifications";
   };
+
+  const headerSettingsQuery = useQuery<HeaderSettings>({
+    queryKey: ["header-settings"],
+    queryFn: async () => {
+      const res = await apiFetch<{ item: HeaderSettings }>("/api/header-settings");
+      return res.item;
+    },
+  });
+
+  const headerSettings = headerSettingsQuery.data;
+  const isImageBackground = headerSettings?.backgroundType === "image";
+  const headerHeight = headerSettings?.height || 144;
+
+  // Build background style based on settings
+  const getBackgroundStyle = () => {
+    if (!headerSettings) {
+      // Default gradient
+      return { background: "linear-gradient(to right, #133767, #133767, #133767)" };
+    }
+
+    if (headerSettings.backgroundType === "image" && headerSettings.imageConfig?.dataUrl) {
+      return {
+        backgroundImage: `url(${headerSettings.imageConfig.dataUrl})`,
+        backgroundRepeat: headerSettings.imageConfig.repeat || "no-repeat",
+        backgroundSize: headerSettings.imageConfig.size || "cover",
+        backgroundPosition: headerSettings.imageConfig.position || "center",
+      };
+    }
+
+    // Color gradient
+    const { from, via, to } = headerSettings.colorConfig || {};
+    return {
+      background: `linear-gradient(to right, ${from || "#133767"}, ${via || "#133767"}, ${to || "#133767"})`,
+    };
+  };
+
+  const bgStyle = getBackgroundStyle();
+
+  // Listen for header settings updates
+  useEffect(() => {
+    const handleSettingsUpdate = () => {
+      void headerSettingsQuery.refetch();
+    };
+    window.addEventListener("header-settings-updated", handleSettingsUpdate);
+    return () => window.removeEventListener("header-settings-updated", handleSettingsUpdate);
+  }, [headerSettingsQuery]);
+
+  // Dispatch height change event when header height changes
+  useEffect(() => {
+    window.dispatchEvent(new CustomEvent("header-height-changed", { detail: { height: headerHeight } }));
+  }, [headerHeight]);
 
   const settingsQuery = useQuery({
     queryKey: ["settings"],
@@ -256,10 +328,27 @@ export function Header({ onMenuClick }: HeaderProps) {
       .toUpperCase() || "M";
 
   return (
-    <header className="fixed top-0 left-0 right-0 md:left-20 z-30 shadow-floating">
-      <div className="w-full bg-gradient-to-r from-[#133767] via-[#133767] to-[#133767]">
-        <div className="hidden md:block fixed top-0 left-0 h-36 w-20 bg-gradient-to-r from-[#133767] via-[#133767] to-[#133767]" />
-        <div className="relative flex h-20 sm:h-24 md:h-36 items-center justify-between px-3 sm:px-6 lg:px-10 py-2 md:py-4 animate-fade-in">
+    <header 
+      className="fixed top-0 left-0 right-0 z-30 shadow-floating"
+      style={{ 
+        height: `${headerHeight}px`,
+        left: '0',
+      }}
+    >
+      <div 
+        className="w-full h-full relative"
+        style={bgStyle}
+      >
+        {isImageBackground && headerSettings?.overlay?.enabled && (
+          <div 
+            className="absolute inset-0"
+            style={{ backgroundColor: headerSettings.overlay.color }}
+          />
+        )}
+        <div className="hidden md:block fixed top-0 left-0 h-full w-20" style={bgStyle} />
+        <div 
+          className="relative flex h-full items-center justify-between px-3 sm:px-6 lg:px-10 py-2 md:py-4 animate-fade-in"
+        >
           <div className="flex items-center z-10">
             <img
               src="/seven logo.png"
